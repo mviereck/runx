@@ -1,0 +1,438 @@
+#! /bin/bash
+# runx: Provide an X server in WSL
+
+Version="0.1"
+
+usage() {                       # Usage information (--help)
+  echo "runx - Provide an X server in WSL.
+Run Linux GUI applications on MS Windows.
+ 
+Syntax:
+  runx [OPTIONS] [ -- ] [COMMAND]
+
+Options:
+  -h, --help                    Show this help.
+  -d, --desktop                 Open a parent window for desktop environments.
+  -g, --gpu [=yes|no]           Enable GPU hardware acceleration. Default: no.
+                                Can fail with NVIDIA cards.
+  -a, --no-auth                 Disable X cookie authentication. Discouraged.
+  -c, --clipboard [=yes|no]     Enable clipboard sharing yes/no. Default: yes.
+  -v, --verbose                 Be verbose.
+
+Installation:
+In WSL:
+ - Copy runx into /usr/local/bin/
+ - Make runx executeable with:       sudo chmod +x /usr/local/bin/runx
+ - Install xauth and xwininfo with:  sudo apt-get install xauth x11-utils
+On Windows:
+ - Download and install X server VcXsrv from: 
+     https://sourceforge.net/projects/vcxsrv/
+   
+You can create an entry in ~/.bashrc to always have an X server available.
+Possible entry in ~/.bashrc:         source /usr/local/bin/runx
+
+Example to run an application directly with runx:
+ - Install file manager thunar with: sudo apt-get install thunar
+ - Run thunar with:                  runx thunar
+ 
+Example to run Xfce desktop:
+ - Install Xfce desktop with:        sudo apt-get install xfce4
+ - Run Xfce with:                    runx --desktop startxfce4
+  
+runx version $Version" >&2
+}
+
+finish() {                      # Clean up and terminate
+  case "$Sourced" in
+    yes)
+      unset -f finish error warning note verbose rmcr escapestring check_hostip check_displaynumber generate_xcommand generate_cookie convertpath getwslpath declare_variables parse_options check_dependencies main
+      Fehler="${Fehler:-0}"
+    ;;
+    no)
+      exit "${1:-0}"
+    ;;
+  esac
+}
+
+error() {                       # Show error message and exit
+  echo -e "${Colredbg}runx ERROR:${Colnorm} $Message
+" >&2
+  Fehler=1
+  finish $Fehler
+}
+
+warning() {                     # Show warning messages
+  echo "${Colyellow}runx WARNING:${Colnorm} $*
+" >&2
+}
+
+note() {                        # Show notice messages
+  echo "${Colgreen}runx note:${Colnorm} $*
+" >&2
+}
+
+verbose() {                     # Show verbose message (--verbose)
+  [ "$Verbose" = "yes" ] && echo "runx: $*
+" >&2
+}
+
+rmcr() {                        # Remove carriage return to translate DOS/Windows newlines into UNIX newlines.
+  # Convert stdin if $1 is empty. Otherwise convert file $1.
+  case "${1:-}" in
+    "") sed    "s/$(printf "\r")//g" ;;
+    *)  sed -i "s/$(printf "\r")//g"  "${1:-}"
+  esac
+}
+
+escapestring() {                # Escape special chars of $1
+  # escape all characters except those described in [^a-zA-Z0-9,._+@=:/-]
+  echo "${1:-}" | LC_ALL=C sed -e 's/[^a-zA-Z0-9,._+@=:/-]/\\&/g; 1{$s/^$/""/}; 1!s/^/"/; $!s/$/"/'
+}
+
+convertpath() {                 # Convert unix and windows pathes
+  # $1: Mode:
+  #   --windows   echo windows path                - result: C:/path
+  #   --unix      echo unix path                   - result: /c/path
+  #   --subsystem echo path within subsystem       - result: /cygdrive/c/path  or  /path
+  #   --volume    echo --volume compatible syntax  - result: 'unixpath':'containerpath':rw  (or ":ro")
+  #   --container echo path of volume in container - result: /path
+  # $2: Path to convert. Arbitrary syntax, can be C:/path, /c/path, /cygdrive/c/path, /path
+  #     Can have suffix :rw or :ro. If none is given, return with :rw
+  # $3: Optional for --volume: containerpath
+  
+  local Mode= Path= Drive= Readwritemode=
+  
+  Mode="${1:-}"
+  Path="${2:-}"
+
+  # check path for suffix :rw or :ro
+  Readwritemode="$(echo "$Path" | rev | cut -c1-3 | rev)"
+  [ "$(cut -c1 <<< "$Readwritemode")" = ":" ] && {
+    Path="$(echo "$Path" | rev | cut -c4- | rev)"
+  } || Readwritemode=":rw"
+
+  # replace ~ with HOME
+  Path="$(sed s%"~"%"${Hostuserhome:-${HOME:-}}"% <<< "$Path")"
+  
+  # not on Windows
+  [ -z "$Winsubsystem" ] && {
+    case $Mode in
+      --unix|--subsystem) echo "$Path" ;;
+      --windows) warning "Nonsense path conversion $Mode: $Path" ; return 1 ;;
+      --volume) echo "'$Path':'${3:-$Path}'$Readwritemode" ;;
+      --container) echo "${3:-$Path}" ;;
+    esac
+    return 0
+  }
+  
+  # replace \ with /
+  Path="$(tr '\\' '/' <<< "$Path")"
+  
+  # remove possible already given mountpoint
+  Path="${Path#$Winsubmount}"
+  
+  # Given format is /c/
+  [ "$(cut -c1,3 <<< "$Path")" = "//" ] && {
+    Drive="$(cut -c2 <<< "$Path")"
+    Path="$(cut -c3- <<< "$Path")"
+  }
+  
+  # Given format is C:/
+  [ "$(cut -c2 <<< "$Path")" = ":" ] && {
+    Drive="$(cut -c1 <<< "$Path")"
+    Path="$(cut -c3- <<< "$Path")"
+  }
+  
+  # change C to c
+  Drive="${Drive,}"
+
+  [ "$Winsubsystem" = "WSL" ] && [ -z "$Drive" ] && case $Mode in
+    --windows|--unix|--volume)
+      warning "Request of Windows path to path within WSL:
+  $Path
+  Write access from Windows host to WSL files can damage WSL.
+  Read-only access is ok."
+    ;;
+  esac
+
+  case $Drive in
+    "") # Path points into subsystem
+      Path="${Path#"$Winsubpath"}"
+      Drive="$(cut -c2 <<<"$Winsubpath")"
+      case $Mode in
+        --windows)   echo "${Drive^}:$(cut -c3- <<<$Winsubpath)$Path" ;;
+        --unix)      echo "$Winsubpath$Path" ;;
+        --subsystem) echo "$Path" ;;
+        --volume)    echo "'$Winsubpath$Path':'${3:-$Path}'$Readwritemode" ;;
+        --container) echo "${3:-$Path}" ;;
+      esac
+    ;;
+    *) # Path outside of subsystem
+      case $Mode in
+        --windows)   echo "${Drive^}:$Path" ;;
+        --unix)      echo "/$Drive$Path" ;;
+        --subsystem) echo "$Winsubmount/$Drive$Path" ;;
+        --volume)    echo "'/$Drive$Path':'${3:-/$Drive$Path}'$Readwritemode" ;;
+        --container) echo "${3:-/$Drive$Path}" ;;
+      esac
+    ;;
+  esac
+  return 0
+}
+
+check_hostip() {                # Print IP of Windows host on stdout.
+  local Hostip=
+  Hostip="$(ipconfig.exe | rmcr | grep -A6 'DockerNAT' | grep 'IPv4' | rev | cut -d' ' -f1 | rev)"
+  [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr | grep 'IPv4' | grep -o '[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*' | grep "^10\.0\.*" )"
+  [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr | grep 'IPv4' | head -n1 | | rev | cut -d' ' -f1 | rev)"
+  echo "$Hostip"
+  [ "$Hostip" ] && return 0 || return 1
+}
+
+check_displaynumber() {         # Find free display number, print on stdout
+  local Newdisplaynumber
+  for ((Newdisplaynumber=100 ; Newdisplaynumber <=1000 ; Newdisplaynumber++)); do
+    grep -q -E 'Authorization|Absolute' <<< "$(xwininfo -display $Hostip:$Newdisplaynumber -root 2>&1)" || break
+  done
+  echo $Newdisplaynumber
+}
+
+generate_xcommand() {           # Generate command to start X server VcXsrv
+  local Xcommand
+  
+  Xcommand="$Vcxsrvexe :$Newdisplaynumber -listen tcp -retro -lesspointer"
+  
+  # GPU hardware acceleration
+  case $Sharegpu in
+    yes)  Xcommand="$Xcommand -wgl   +iglx" ; export LIBGL_ALWAYS_INDIRECT=1 ;;
+    no|*) Xcommand="$Xcommand -nowgl -iglx" ; unset  LIBGL_ALWAYS_INDIRECT   ;;
+  esac
+  
+  # Seamless or desktop mode
+  [ "$Desktopmode" = "no" ] && Xcommand="$Xcommand -multiwindow"
+      
+  # Clipboard
+  case $Shareclipboard in
+    yes)    Xcommand="$Xcommand -clipboard" ;;
+    no|*)   Xcommand="$Xcommand -noclipboard" ;;
+  esac
+
+  case $Xauthentication in
+    yes) Xcommand="$Xcommand -auth '$(convertpath --windows "$Xservercookie")'" ;;
+    no)  Xcommand="$Xcommand -ac" ;;
+  esac
+  
+  # X server extensions
+  Xcommand="$Xcommand \
+  +extension RANDR \
+  +extension RENDER \
+  +extension GLX \
+  +extension DOUBLE-BUFFER \
+  +extension SECURITY \
+  +extension DAMAGE \
+  +extension COMPOSITE \
+  -extension X-Resource \
+  -extension XTEST"
+  
+  echo "$Xcommand"
+}
+
+generate_cookie() {             # Generate X authentication cookie
+  local Cookie
+  xauth -v -i -f "$Xclientcookie" add :$Newdisplaynumber . $(mcookie)
+  # create prepared cookie with localhost identification disabled by ffff, needed if X socket is shared. ffff means 'familiy wild'
+  Cookie="$(xauth -i -f "$Xclientcookie" nlist | sed -e 's/^..../ffff/')"
+  echo "$Cookie" | xauth -v -i -f "$Xclientcookie" nmerge -
+  echo "$Cookie" | xauth -v -i -f "$Xservercookie" nmerge -
+}
+
+getwslpath() {                  # get path to currently running WSL system
+
+  # Fork from https://github.com/Microsoft/WSL/issues/2578#issuecomment-354010141
+  
+  local RUN_ID= BASE_PATH=
+  
+  RUN_ID="/tmp/$(mcookie)"
+
+  # Mark our filesystem with a temporary file having an unique name.
+  touch "${RUN_ID}"
+
+  powershell.exe -Command '(Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss | ForEach-Object {Get-ItemProperty $_.PSPath}).BasePath.replace(":", "").replace("\", "/")' | while IFS= read -r BASEPATH; do
+    # Remove trailing whitespaces.
+    BASEPATH="${BASEPATH%"${BASEPATH##*[![:space:]]}"}"
+    # Build the path on WSL.
+    BASEPATH="/mnt/${BASEPATH,}/rootfs"
+
+    # Current WSL instance doesn't have an access to its mount from within
+    # itself despite all others are available. That's the hacky way we're
+    # using to determine current instance.
+    #
+    # The second of part of the condition is a fallback for a case if our
+    # trick will stop working. For that we've created a temporary file with
+    # an unique name and now seeking it among all WLSs.
+    if ! ls "${BASEPATH}" > /dev/null 2>&1 || [ -f "${BASEPATH}${RUN_ID}" ]; then
+      echo "${BASEPATH}"
+      # You can create and simultaneously run multiple WSL instances, comment
+      # out the "break", run this script within each one and it'll return only
+      # single value.
+      break
+    fi
+  done
+  rm "${RUN_ID}"
+  return 0
+}
+
+declare_variables() {
+  # Default values
+  Desktopmode="no"
+  Screensize="" ###
+  Sharegpu="no"
+  Shareclipboard="no" ###
+  Verbose="yes" ###
+  Xauthentication="yes"
+  
+  # Terminal colors used for messages and --verbose=c
+  Esc="$(printf '\033')"
+  Colblue="${Esc}[35m"
+  Colyellow="${Esc}[33m"
+  Colgreen="${Esc}[32m"
+  Colgreenbg="${Esc}[42m"
+  Colred="${Esc}[31m"
+  Colredbg="${Esc}[41m"
+  Coluline="${Esc}[4m"
+  Colnorm="${Esc}[0m"
+  
+  # Empty global vars needed later
+  Fehler=""
+  Hostip=""
+  Newdisplaynumber=""
+  Sourced=""
+  Vcxsrvexe=""
+  Winsubmount=""
+  Winsubpath=""
+  Xcommand=""
+}
+
+parse_options() {
+  
+  local Shortoptions Longoptions Parsererror
+  Shortoptions="acdghv"
+  Longoptions="desktop,gpu::,clipboard::,no-auth,help,verbose"
+  
+  Parsedoptions="$(getopt --options $Shortoptions --longoptions $Longoptions --name "$0" -- "$@" 2>/tmp/runx_parsererror)"
+  [ -e /tmp/runx_parsererror ] && Parsererror=$(cat /tmp/runx_parsererror) && rm /tmp/runx_parsererror
+  [ "$Parsererror" ] && error "$Parsererror"
+  eval set -- "$Parsedoptions"
+  verbose "$Parsedoptions"
+  set -x
+  while [ $# -gt 0 ]; do
+    case "${1:-}" in
+      -a|--no-auth)   Xauthentication="no" ;;
+      -c|--clipboard) Clipboard="${2:-yes}"; shift ;;
+      -d|--desktop)   Desktopmode="yes" ;;
+      -g|--gpu)       Sharegpu="${2:-yes}" ;;
+      -h|--help)      usage; finish ;;
+      -v|--verbose)   
+      --) shift;      Hostcommand="$@"; break ;;
+      *) error "Unknown option: ${1:-}
+  $(usage 2>&1)"
+    esac
+    shift
+  done
+  set +x
+}
+
+check_dependencies() {
+  for Line in xauth xwininfo mcookie; do
+    command -v "$Line" >/dev/null || {
+      error "Command not found: $Line
+  Please install package for Linux command: $Line."
+    }
+  done
+  for Line in cmd.exe ipconfig.exe powershell.exe tasklist.exe ; do
+    command -v "$Line" >/dev/null || {
+      error "Windows command not found: $Line"
+    }
+  done
+}
+
+main() {
+  [ "$0" = "$BASH_SOURCE" ] && Sourced="yes" || Sourced="no"
+  verbose "Script is being sourced yes/no: $Sourced"
+
+  Hostip="$(check_hostip)"
+  verbose "Host IP adress: $Hostip"
+
+  Winsubsystem="WSL"
+  Winsubmount="/mnt"
+  grep -q "Windows" <<< "${PATH:-}" || export PATH="${PATH:-}:$Winsubmount/c/Windows/System32:$Winsubmount/c/Windows/System32/WindowsPowerShell/v1.0" # can miss after sudo
+  Winsubpath="$(convertpath --unix "$(getwslpath)")"
+  
+  Newdisplaynumber="$(check_displaynumber)"
+  Xclientcookie="$(convertpath --subsystem "~/.Xauthority")"
+  Xservercookie="$(convertpath --subsystem "$(cmd.exe /C "echo %userprofile%")" | rmcr)/.Xauthority"
+  
+  verbose "Cookies:
+  $Xservercookie
+  $Xclientcookie"
+  
+  Vcxsrvexe="$(convertpath --subsystem "C:/Program Files/VcXsrv/vcxsrv.exe")"
+  Vcxsrvexe="$(escapestring "$Vcxsrvexe")"
+
+  # remove old cookies if no VcXsrv is running yet
+  command -v tasklist.exe >/dev/null && {
+    tasklist.exe | rmcr | grep -q vcxsrv.exe || {
+      verbose "Removing old cookies."
+      [ -e "$Xservercookie" ] && rm "$Xservercookie"
+      [ -e "$Xclientcookie" ] && rm "$Xclientcookie"
+    }
+  }
+
+  # generate fresh cookie
+  [ "$Xauthentication" = "yes" ] && generate_cookie
+  verbose "Generated cookie:
+  $(xauth nlist "$Xclientcookie")"
+
+  Xcommand="$(generate_xcommand)"
+  verbose "Generated X command:
+  $Xcommand"
+  
+  [ -z "$Fehler" ] && {
+    eval $Xcommand & XWSL_XPID=$!
+    verbose "PID of X server: $XWSL_XPID"
+
+    export XWSL_XPID
+    export DISPLAY=$Hostip:$Newdisplaynumber
+    case "$Xauthentication" in
+      yes)
+        export XAUTHORITY="$Xclientcookie"
+        verbose "DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY"
+        echo "DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY"
+      ;;
+      no)
+        unset XAUTHORITY
+        verbose "DISPLAY=$DISPLAY"
+        echo "DISPLAY=$DISPLAY"
+      ;;
+    esac
+  
+    [ "$Hostcommand" ] && {
+      verbose "Executing command:
+    $Hostcommand"
+      eval $Hostcommand
+    }
+  }
+}
+
+declare_variables
+parse_options "$@"
+check_dependencies
+main
+finish
+
+todo() {
+  # support of MSYS2 and Cygwin?
+  # runx
+  # dependecy check vcxsrv
+  # xwin
+}
