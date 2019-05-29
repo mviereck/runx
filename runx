@@ -1,7 +1,7 @@
 #! /bin/bash
 # runx: Provide an X server in WSL
 
-Version="0.1"
+Version="0.1.1"
 
 usage() {                       # Usage information (--help)
   echo "runx - Provide an X server in WSL.
@@ -45,7 +45,7 @@ runx version $Version" >&2
 finish() {                      # Clean up and terminate
   case "$Sourced" in
     yes)
-      unset -f finish error warning note verbose rmcr escapestring check_hostip check_displaynumber generate_xcommand generate_cookie convertpath getwslpath declare_variables parse_options check_dependencies main
+      unset -f finish error warning note verbose rmcr escapestring check_host check_displaynumber generate_xcommand setup_cookie convertpath getwslpath declare_variables parse_options check_dependencies main
       Fehler="${Fehler:-0}"
     ;;
     no)
@@ -58,7 +58,6 @@ error() {                       # Show error message and exit
   echo -e "${Colredbg}runx ERROR:${Colnorm} $Message
 " >&2
   Fehler=1
-  finish $Fehler
 }
 
 warning() {                     # Show warning messages
@@ -72,8 +71,7 @@ note() {                        # Show notice messages
 }
 
 verbose() {                     # Show verbose message (--verbose)
-  [ "$Verbose" = "yes" ] && echo "runx: $*
-" >&2
+  [ "$Verbose" = "yes" ] && note "$*"
 }
 
 rmcr() {                        # Remove carriage return to translate DOS/Windows newlines into UNIX newlines.
@@ -180,19 +178,48 @@ convertpath() {                 # Convert unix and windows pathes
   return 0
 }
 
-check_hostip() {                # Print IP of Windows host on stdout.
-  local Hostip=
+check_host() {
+
+  # Check for MS Windows subsystem
+  uname -r | grep -q Microsoft                    && Winsubsystem="WSL"
+  command -v cygcheck.exe >/dev/null && {
+    cygcheck.exe -V | rmcr | grep -q "(cygwin)"   && Winsubsystem="CYGWIN"
+    cygcheck.exe -V | rmcr | grep -q "(msys)"     && Winsubsystem="MSYS2"
+  }
+  
+  case $Winsubsystem in
+    MSYS2|CYGWIN) 
+      Winsubmount="$(cygpath.exe -u "c:/" | rmcr | sed s%/c/%%)"
+      Winsubpath="$(convertpath --unix "$(cygpath.exe -w "/" | rmcr)" )" ;;
+    WSL)          
+      Winsubmount="/mnt"
+      grep -q "Windows" <<< "${PATH:-}" || export PATH="${PATH:-}:$Winsubmount/c/Windows/System32:$Winsubmount/c/Windows/System32/WindowsPowerShell/v1.0" # can miss after sudo
+      Winsubpath="$(convertpath --unix "$(getwslpath)")" ;;
+  esac
+  
+  case "$Winsubsystem" in
+    WSL) ;;
+    *) error "runx is designed to run on Windows in WSL" ;; ###
+  esac
+  
+  export PATH="$PATH:$(convertpath --subsystem "C:/Program Files/docker"):$(convertpath --subsystem "C:/Program Files/Docker/Docker/resources/bin")"
+    
+  Vcxsrvexe="$(convertpath --subsystem "C:/Program Files/VcXsrv/vcxsrv.exe")"
+  Vcxsrvexe="$(escapestring "$Vcxsrvexe")"
+  
+  # Check IP of Windows host
   Hostip="$(ipconfig.exe | rmcr | grep -A6 'DockerNAT' | grep 'IPv4' | rev | cut -d' ' -f1 | rev)"
   [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr | grep 'IPv4' | grep -o '[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*' | grep "^10\.0\.*" )"
   [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr | grep 'IPv4' | head -n1 | | rev | cut -d' ' -f1 | rev)"
-  echo "$Hostip"
-  [ "$Hostip" ] && return 0 || return 1
+  verbose "Host IP adress: $Hostip"
+  
+  return 0
 }
 
 check_displaynumber() {         # Find free display number, print on stdout
   local Newdisplaynumber
   for ((Newdisplaynumber=100 ; Newdisplaynumber <=1000 ; Newdisplaynumber++)); do
-    grep -q -E 'Authorization|Absolute' <<< "$(xwininfo -display $Hostip:$Newdisplaynumber -root 2>&1)" || break
+    grep -q -E 'Authorization|Absolute|MIT-MAGIC-COOKIE' <<< "$(xwininfo -display $Hostip:$Newdisplaynumber -root 2>&1)" || break
   done
   echo $Newdisplaynumber
 }
@@ -237,13 +264,38 @@ generate_xcommand() {           # Generate command to start X server VcXsrv
   echo "$Xcommand"
 }
 
-generate_cookie() {             # Generate X authentication cookie
+setup_cookie() {             # Generate X authentication cookie
   local Cookie
-  xauth -v -i -f "$Xclientcookie" add :$Newdisplaynumber . $(mcookie)
-  # create prepared cookie with localhost identification disabled by ffff, needed if X socket is shared. ffff means 'familiy wild'
+  
+  Xclientcookie="$(convertpath --subsystem "~/runx_Xauthority")"
+  Xservercookie="$(convertpath --subsystem "$(cmd.exe /C "echo %userprofile%")" | rmcr)/runx_Xauthority"
+  touch "$Xclientcookie"
+  touch "$Xservercookie"
+  
+  verbose "Cookies:
+  $Xservercookie
+  $Xclientcookie"
+
+  # remove old cookies if no VcXsrv is running yet
+  command -v tasklist.exe >/dev/null && {
+    tasklist.exe | rmcr | grep -q vcxsrv.exe || {
+      verbose "Removing old cookies."
+      [ -e "$Xservercookie" ] && rm "$Xservercookie"
+      [ -e "$Xclientcookie" ] && rm "$Xclientcookie"
+    }
+  }
+  
+  # generate fresh cookie
+  xauth -i -f "$Xclientcookie" add :$Newdisplaynumber . $(mcookie)
+  # prepare cookie with localhost identification disabled by ffff. ffff means 'familiy wild'
   Cookie="$(xauth -i -f "$Xclientcookie" nlist | sed -e 's/^..../ffff/')"
-  echo "$Cookie" | xauth -v -i -f "$Xclientcookie" nmerge -
-  echo "$Cookie" | xauth -v -i -f "$Xservercookie" nmerge -
+  echo "$Cookie" | xauth -i -f "$Xclientcookie" nmerge -
+  echo "$Cookie" | xauth -i -f "$Xservercookie" nmerge -
+  
+  verbose "Generated cookie:
+$(xauth -v -f "$Xclientcookie" list)"
+  verbose "Server cookie:
+$(xauth -v -f "$Xservercookie" list)"
 }
 
 getwslpath() {                  # get path to currently running WSL system
@@ -288,7 +340,7 @@ declare_variables() {
   Screensize="" ###
   Sharegpu="no"
   Shareclipboard="no" ###
-  Verbose="yes" ###
+  Verbose="no"
   Xauthentication="yes"
   
   # Terminal colors used for messages and --verbose=c
@@ -324,7 +376,6 @@ parse_options() {
   [ "$Parsererror" ] && error "$Parsererror"
   eval set -- "$Parsedoptions"
   verbose "$Parsedoptions"
-  set -x
   while [ $# -gt 0 ]; do
     case "${1:-}" in
       -a|--no-auth)   Xauthentication="no" ;;
@@ -332,14 +383,13 @@ parse_options() {
       -d|--desktop)   Desktopmode="yes" ;;
       -g|--gpu)       Sharegpu="${2:-yes}" ;;
       -h|--help)      usage; finish ;;
-      -v|--verbose)   
+      -v|--verbose)   Verbose="yes" ;;
       --) shift;      Hostcommand="$@"; break ;;
       *) error "Unknown option: ${1:-}
   $(usage 2>&1)"
     esac
     shift
   done
-  set +x
 }
 
 check_dependencies() {
@@ -357,82 +407,53 @@ check_dependencies() {
 }
 
 main() {
-  [ "$0" = "$BASH_SOURCE" ] && Sourced="yes" || Sourced="no"
+  [ "$0" = "$BASH_SOURCE" ] && Sourced="no" || Sourced="yes"
   verbose "Script is being sourced yes/no: $Sourced"
-
-  Hostip="$(check_hostip)"
-  verbose "Host IP adress: $Hostip"
-
-  Winsubsystem="WSL"
-  Winsubmount="/mnt"
-  grep -q "Windows" <<< "${PATH:-}" || export PATH="${PATH:-}:$Winsubmount/c/Windows/System32:$Winsubmount/c/Windows/System32/WindowsPowerShell/v1.0" # can miss after sudo
-  Winsubpath="$(convertpath --unix "$(getwslpath)")"
   
   Newdisplaynumber="$(check_displaynumber)"
-  Xclientcookie="$(convertpath --subsystem "~/.Xauthority")"
-  Xservercookie="$(convertpath --subsystem "$(cmd.exe /C "echo %userprofile%")" | rmcr)/.Xauthority"
   
-  verbose "Cookies:
-  $Xservercookie
-  $Xclientcookie"
-  
-  Vcxsrvexe="$(convertpath --subsystem "C:/Program Files/VcXsrv/vcxsrv.exe")"
-  Vcxsrvexe="$(escapestring "$Vcxsrvexe")"
-
-  # remove old cookies if no VcXsrv is running yet
-  command -v tasklist.exe >/dev/null && {
-    tasklist.exe | rmcr | grep -q vcxsrv.exe || {
-      verbose "Removing old cookies."
-      [ -e "$Xservercookie" ] && rm "$Xservercookie"
-      [ -e "$Xclientcookie" ] && rm "$Xclientcookie"
-    }
-  }
-
-  # generate fresh cookie
-  [ "$Xauthentication" = "yes" ] && generate_cookie
-  verbose "Generated cookie:
-  $(xauth nlist "$Xclientcookie")"
-
+  setup_cookie
   Xcommand="$(generate_xcommand)"
   verbose "Generated X command:
   $Xcommand"
   
-  [ -z "$Fehler" ] && {
-    eval $Xcommand & XWSL_XPID=$!
-    verbose "PID of X server: $XWSL_XPID"
+  eval $Xcommand & XWSL_XPID=$!
+  verbose "PID of X server: $XWSL_XPID"
 
-    export XWSL_XPID
-    export DISPLAY=$Hostip:$Newdisplaynumber
-    case "$Xauthentication" in
-      yes)
-        export XAUTHORITY="$Xclientcookie"
-        verbose "DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY"
-        echo "DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY"
-      ;;
-      no)
-        unset XAUTHORITY
-        verbose "DISPLAY=$DISPLAY"
-        echo "DISPLAY=$DISPLAY"
-      ;;
-    esac
+  export XWSL_XPID
+  export DISPLAY=$Hostip:$Newdisplaynumber
+  case "$Xauthentication" in
+    yes)
+      export XAUTHORITY="$Xclientcookie"
+      verbose "DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY"
+      echo "DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY"
+    ;;
+    no)
+      unset XAUTHORITY
+      verbose "DISPLAY=$DISPLAY"
+      echo "DISPLAY=$DISPLAY"
+    ;;
+  esac
   
-    [ "$Hostcommand" ] && {
-      verbose "Executing command:
-    $Hostcommand"
-      eval $Hostcommand
-    }
+  [ "$Hostcommand" ] && {
+    verbose "Executing command:
+  $Hostcommand"
+    eval $Hostcommand
   }
 }
 
 declare_variables
 parse_options "$@"
+check_host
 check_dependencies
-main
-finish
+[ -z "$Fehler" ] && main
+finish "${Fehler:-0}"
 
 todo() {
+  :
   # support of MSYS2 and Cygwin?
   # runx
-  # dependecy check vcxsrv
+  # dependency check vcxsrv
   # xwin
+  # terminate X if not sourced
 }
