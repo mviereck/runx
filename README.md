@@ -30,10 +30,10 @@ Possible entry in ~/.bashrc:     source /usr/local/bin/runx
 Example to run an application directly with runx:
  - Install file manager pcmanfm: sudo apt update
                                  sudo apt install pcmanfm
- - Run thunar with:              runx pcmanfm
+ - Run pcmanfm with:             runx pcmanfm
  
 Example to run Mate desktop:
  - Install Mate desktop with:    sudo apt-get install mate-desktop-environment
- - Run Xfce with:                runx --desktop startxfce4
+ - Run Mate with:                runx --desktop mate-session
  ```
  
