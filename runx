@@ -1,49 +1,54 @@
 #! /bin/bash
 # runx: Provide an X server in WSL
 
-Version="0.1.2"
+Version="0.1.3"
 
 usage() {                       # Usage information (--help)
-  echo "runx - Provide an X server in WSL.
+  echo "runx - Provide an X server on MS Windows in WSL, Cygwin or MSYS2
 Run Linux GUI applications on MS Windows.
- 
+
 Syntax:
-  runx [OPTIONS] [ -- ] [COMMAND]
+  runx [OPTIONS]  --  [COMMAND]
 
 Options:
   -h, --help                     Show this help.
   -d, --desktop                  Open a parent window for desktop environments.
   -g, --gpu [=yes|no]            Enable GPU hardware acceleration. Default: no.
                                  Can fail with NVIDIA cards.
-  -a, --no-auth                  Disable X cookie authentication. Discouraged.
   -c, --clipboard [=yes|no]      Enable clipboard sharing yes/no. Default: yes.
+      --display N                Display number N for new X server.
+      --no-auth                  Disable X cookie authentication. Discouraged.
   -v, --verbose                  Be verbose.
 
 Installation:
-In WSL:
  - Copy runx into /usr/local/bin/
  - Make runx executeable:        sudo chmod +x /usr/local/bin/runx
- - Install xauth and xwininfo:   sudo apt-get install xauth x11-utils
-On Windows:
+ - Install xauth and xwininfo:   sudo apt install xauth x11-utils
+Install on Windows:
  - Download and install X server VcXsrv from: 
      https://sourceforge.net/projects/vcxsrv/
-   
+
+Usage:
 You can create an entry in ~/.bashrc to always have an X server available.
 Possible entry in ~/.bashrc:     source /usr/local/bin/runx
 
 Example to run an application directly with runx:
  - Install file manager pcmanfm: sudo apt update
                                  sudo apt install pcmanfm
- - Run pcmanfm with:             runx pcmanfm
- 
+ - Run pcmanfm with:             runx -- pcmanfm
+
 Example to run Mate desktop:
- - Install Mate desktop with:    sudo apt-get install mate-desktop-environment
- - Run Mate with:                runx --desktop mate-session
-  
+ - Install Mate desktop with:    sudo apt install mate-desktop-environment
+ - Run Mate desktop with:        runx --desktop -- mate-session
+
 runx version $Version" >&2
 }
 
 finish() {                      # Clean up and terminate
+  [ "$RUNX_XPID" ] && ps -p "$RUNX_XPID" >/dev/null 2>&1 && {
+    verbose "Terminating X server $RUNX_XPID"
+    kill "$RUNX_XPID"
+  }
   case "$Sourced" in
     yes)
       unset -f finish error warning note verbose rmcr escapestring check_host check_displaynumber generate_xcommand setup_cookie convertpath getwslpath declare_variables parse_options check_dependencies main
@@ -56,7 +61,7 @@ finish() {                      # Clean up and terminate
 }
 
 error() {                       # Show error message and exit
-  echo -e "${Colredbg}runx ERROR:${Colnorm} $Message
+  echo -e "${Colredbg}runx ERROR:${Colnorm} $*
 " >&2
   Exitcode=1
 }
@@ -188,6 +193,9 @@ check_host() {
     cygcheck.exe -V | rmcr | grep -q "(msys)"     && Winsubsystem="MSYS2"
   }
   
+  [ "$0" = "$BASH_SOURCE" ] && Sourced="no" || Sourced="yes"
+  verbose "Script is being sourced yes/no: $Sourced"
+  
   case $Winsubsystem in
     MSYS2|CYGWIN) 
       Winsubmount="$(cygpath.exe -u "c:/" | rmcr | sed s%/c/%%)"
@@ -197,16 +205,6 @@ check_host() {
       grep -q "Windows" <<< "${PATH:-}" || export PATH="${PATH:-}:$Winsubmount/c/Windows/System32:$Winsubmount/c/Windows/System32/WindowsPowerShell/v1.0" # can miss after sudo
       Winsubpath="$(convertpath --unix "$(getwslpath)")" ;;
   esac
-  
-  case "$Winsubsystem" in
-    WSL) ;;
-    *) error "runx is designed to run on Windows in WSL" ;; ###
-  esac
-  
-  export PATH="$PATH:$(convertpath --subsystem "C:/Program Files/docker"):$(convertpath --subsystem "C:/Program Files/Docker/Docker/resources/bin")"
-    
-  Vcxsrvexe="$(convertpath --subsystem "C:/Program Files/VcXsrv/vcxsrv.exe")"
-  Vcxsrvexe="$(escapestring "$Vcxsrvexe")"
   
   # Check IP of Windows host
   Hostip="$(ipconfig.exe | rmcr | grep -A6 'DockerNAT' | grep 'IPv4' | rev | cut -d' ' -f1 | rev)"
@@ -218,17 +216,14 @@ check_host() {
 }
 
 check_displaynumber() {         # Find free display number, print on stdout
-  local Newdisplaynumber
   for ((Newdisplaynumber=100 ; Newdisplaynumber <=1000 ; Newdisplaynumber++)); do
     grep -q -E 'Authorization|Absolute|MIT-MAGIC-COOKIE' <<< "$(xwininfo -display $Hostip:$Newdisplaynumber -root 2>&1)" || break
   done
-  echo $Newdisplaynumber
 }
 
 generate_xcommand() {           # Generate command to start X server VcXsrv
-  local Xcommand
   
-  Xcommand="$Vcxsrvexe :$Newdisplaynumber -listen tcp -retro -lesspointer"
+  Xcommand="$(escapestring "$Vcxsrvexe") :$Newdisplaynumber -listen tcp -retro -lesspointer"
   
   # GPU hardware acceleration
   case $Sharegpu in
@@ -262,7 +257,8 @@ generate_xcommand() {           # Generate command to start X server VcXsrv
   -extension X-Resource \
   -extension XTEST"
   
-  echo "$Xcommand"
+  verbose "Generated X command:
+  $Xcommand"
 }
 
 setup_cookie() {             # Generate X authentication cookie
@@ -340,8 +336,8 @@ declare_variables() {
   # Default values
   Desktopmode="no"
   Screensize="" ###
-  Sharegpu="no"
   Shareclipboard="no" ###
+  Sharegpu="no"
   Verbose="no"
   Xauthentication="yes"
   
@@ -370,8 +366,8 @@ declare_variables() {
 parse_options() {
   
   local Shortoptions Longoptions Parsererror
-  Shortoptions="acdghv"
-  Longoptions="desktop,gpu::,clipboard::,no-auth,help,verbose"
+  Shortoptions="cdghv"
+  Longoptions="desktop,gpu::,clipboard::,display:,no-auth,help,verbose"
   
   Parsedoptions="$(getopt --options $Shortoptions --longoptions $Longoptions --name "$0" -- "$@" 2>/tmp/runx_parsererror)"
   [ -e /tmp/runx_parsererror ] && Parsererror=$(cat /tmp/runx_parsererror) && rm /tmp/runx_parsererror
@@ -380,9 +376,10 @@ parse_options() {
   verbose "$Parsedoptions"
   while [ $# -gt 0 ]; do
     case "${1:-}" in
-      -a|--no-auth)   Xauthentication="no" ;;
+         --no-auth)   Xauthentication="no" ;;
       -c|--clipboard) Clipboard="${2:-yes}"; shift ;;
       -d|--desktop)   Desktopmode="yes" ;;
+         --display)   Newdisplaynumber="$(tr -d: <<< "${2:-}")" ; shift ;;
       -g|--gpu)       Sharegpu="${2:-yes}" ;;
       -h|--help)      usage; finish ;;
       -v|--verbose)   Verbose="yes" ;;
@@ -394,35 +391,62 @@ parse_options() {
   done
 }
 
+check_dependency() {
+  command -v "${1:-}" >/dev/null || {
+    note "Command not found: ${1:-}"
+    return 1
+  }
+  return 0
+}
+
 check_dependencies() {
-  for Line in xauth xwininfo mcookie; do
-    command -v "$Line" >/dev/null || {
-      error "Command not found: $Line
-  Please install package for Linux command: $Line."
+  local Line
+  
+  case "$Winsubsystem" in
+    WSL|CYGWIN|MSYS2) ;;
+    *) error "runx is designed to run on MS Windows in WSL, Cygwin or MSYS2.
+  Did not detect WSL, Cygwin or MSYS2." ;; ###
+  esac
+  
+  [ "$Xauthentication" = "yes" ] && {
+    check_dependency xauth || error "Missing dependency: xauth
+  Cannot create an authorization cookie for X server access.
+  Please install package in $Winsubsystem:  xauth
+  You can disable cookie authentication with discouraged option --no-auth."
+  }
+  [ "$Newdisplaynumber" ] || {
+    check_dependency xwininfo || {
+      Newdisplaynumber="$((RANDOM / 10))"
+      warning "Missing dependency: xwininfo
+  Cannot check for a free display number.
+  Please install package in $Winsubsystem:  xwininfo  or  x11-utils
+  Fallback: Using random display number :$Newdisplaynumber .
+  If this display number is already in use, the startup will fail.
+  You can specify a custom display number with option --display=N."
     }
-  done
+  }
+  # mcookie ### FIXME
+  
+  Vcxsrvexe="$(command -v vcxsrv.exe)"
+  [ "$Vcxsrvexe" ] || Vcxsrvexe="$(convertpath --subsystem "C:/Program Files/VcXsrv/vcxsrv.exe")"
+
   for Line in cmd.exe ipconfig.exe powershell.exe tasklist.exe ; do
-    command -v "$Line" >/dev/null || {
-      error "Windows command not found: $Line"
-    }
+    check_dependency "$Line" || error "Did not find Windows command: $Line"
   done
+  
+  check_dependency "${Vcxsrvexe:-vcxsrv.exe}" || {
+    error "X server VcXsrv not found. Please install VcXsrv on Windows from: 
+  https://sourceforge.net/projects/vcxsrv/"
+  }
 }
 
 main() {
-  [ "$0" = "$BASH_SOURCE" ] && Sourced="no" || Sourced="yes"
-  verbose "Script is being sourced yes/no: $Sourced"
   
-  Newdisplaynumber="$(check_displaynumber)"
+  [ "$Newdisplaynumber" ] || check_displaynumber
+  [ "$Xauthentication" = "yes" ] && setup_cookie
+  generate_xcommand
   
-  setup_cookie
-  Xcommand="$(generate_xcommand)"
-  verbose "Generated X command:
-  $Xcommand"
-  
-  eval $Xcommand & XWSL_XPID=$!
-  verbose "PID of X server: $XWSL_XPID"
 
-  export XWSL_XPID
   export DISPLAY=$Hostip:$Newdisplaynumber
   case "$Xauthentication" in
     yes)
@@ -437,11 +461,24 @@ main() {
     ;;
   esac
   
+  [ "$Verbose" = "yes" ] && Xcommand="$Xcommand 1>&2" || Xcommand="$Xcommand >/dev/null 2>&1"
+  { [ "$Hostcommand" ] || [ "$Sourced" = "yes" ] ; }  && Xcommand="$Xcommand & RUNX_XPID=\$!"
+  
+  eval $Xcommand
+  
+  [ "$RUNX_XPID" ] && {
+    export RUNX_XPID
+    verbose "PID of X server: $RUNX_XPID
+  $(ps -p "$RUNX_XPID")"
+  } || unset RUNX_XPID
+   
+  [ "$Sourced" = "yes" ]     && export RUNX_SOURCED=1 || unset RUNX_SOURCED
+  [ "$Desktopmode" = "yes" ] && export RUNX_DESKTOP=1 || unset RUNX_DESKTOP
+  
   [ "$Hostcommand" ] && {
     verbose "Executing command:
   $Hostcommand"
     eval $Hostcommand
-    ps -p "$XWSL_XPID" && kill $XWSL_XPID
   }
 }
 
@@ -449,7 +486,7 @@ declare_variables
 parse_options "$@"
 check_host
 check_dependencies
-[ -z "$Exitcode" ] && main
+[ "$Exitcode" ] || main
 finish "${Exitcode:-0}"
 
 todo() {
