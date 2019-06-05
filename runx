@@ -1,10 +1,10 @@
 #! /bin/bash
 # runx: Provide an X server in WSL
 
-Version="0.1.3"
+Version="0.1.4"
 
 usage() {                       # Usage information (--help)
-  echo "runx - Provide an X server on MS Windows in WSL, Cygwin or MSYS2
+  echo "runx - Provide an X server on MS Windows in WSL, MSYS2 or Cygwin
 Run Linux GUI applications on MS Windows.
 
 Syntax:
@@ -18,9 +18,10 @@ Options:
   -c, --clipboard [=yes|no]      Enable clipboard sharing yes/no. Default: yes.
       --display N                Display number N for new X server.
       --no-auth                  Disable X cookie authentication. Discouraged.
+      --cleanup                  Stop all Vcxsrv X servers and delete cookies.
   -v, --verbose                  Be verbose.
 
-Installation:
+Installation in WSL, MSYS2 or Cygwin:
  - Copy runx into /usr/local/bin/
  - Make runx executeable:        sudo chmod +x /usr/local/bin/runx
  - Install xauth and xwininfo:   sudo apt install xauth x11-utils
@@ -332,6 +333,15 @@ getwslpath() {                  # get path to currently running WSL system
   return 0
 }
 
+cleanup() {
+  # kill all instances of VcXsrv and remove cookies
+  MSYS2_ARG_CONV_EXCL='*' taskkill.exe /F /PID vcxsrv.exe
+  # Remove cookies
+  Newdisplaynumber=0
+  setup_cookie
+  rm -v "$Xclientcookie" "$Xservercookie"
+}
+
 declare_variables() {
   # Default values
   Desktopmode="no"
@@ -367,7 +377,7 @@ parse_options() {
   
   local Shortoptions Longoptions Parsererror
   Shortoptions="cdghv"
-  Longoptions="desktop,gpu::,clipboard::,display:,no-auth,help,verbose"
+  Longoptions="desktop,gpu::,clipboard::,display:,no-auth,help,verbose,cleanup"
   
   Parsedoptions="$(getopt --options $Shortoptions --longoptions $Longoptions --name "$0" -- "$@" 2>/tmp/runx_parsererror)"
   [ -e /tmp/runx_parsererror ] && Parsererror=$(cat /tmp/runx_parsererror) && rm /tmp/runx_parsererror
@@ -377,6 +387,7 @@ parse_options() {
   while [ $# -gt 0 ]; do
     case "${1:-}" in
          --no-auth)   Xauthentication="no" ;;
+         --cleanup)   Cleanup="yes" ;;
       -c|--clipboard) Clipboard="${2:-yes}"; shift ;;
       -d|--desktop)   Desktopmode="yes" ;;
          --display)   Newdisplaynumber="$(tr -d: <<< "${2:-}")" ; shift ;;
@@ -430,7 +441,7 @@ check_dependencies() {
   Vcxsrvexe="$(command -v vcxsrv.exe)"
   [ "$Vcxsrvexe" ] || Vcxsrvexe="$(convertpath --subsystem "C:/Program Files/VcXsrv/vcxsrv.exe")"
 
-  for Line in cmd.exe ipconfig.exe powershell.exe tasklist.exe ; do
+  for Line in cmd.exe ipconfig.exe powershell.exe tasklist.exe taskkill.exe; do
     check_dependency "$Line" || error "Did not find Windows command: $Line"
   done
   
@@ -486,6 +497,7 @@ declare_variables
 parse_options "$@"
 check_host
 check_dependencies
+[ "$Cleanup" = "yes" ] && cleanup && Exitcode="${Exitcode:-0}"
 [ "$Exitcode" ] || main
 finish "${Exitcode:-0}"
 
