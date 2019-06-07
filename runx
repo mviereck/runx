@@ -14,11 +14,12 @@ Options:
   -h, --help                     Show this help.
   -d, --desktop                  Open a parent window for desktop environments.
   -g, --gpu [=yes|no]            Enable GPU hardware acceleration. Default: no.
-                                 Can fail with NVIDIA cards.
+                                 Can fail with NVIDIA cards. Works better with
+                                 XWin in Cygwin than with VcXsrv.
   -c, --clipboard [=yes|no]      Enable clipboard sharing yes/no. Default: yes.
       --display N                Display number N for new X server.
       --no-auth                  Disable X cookie authentication. Discouraged.
-      --cleanup                  Stop all Vcxsrv X servers and delete cookies.
+      --cleanup                  Stop all X servers and delete cookies.
   -v, --verbose                  Be verbose.
 
 Installation in WSL, MSYS2 or Cygwin:
@@ -28,12 +29,13 @@ Installation in WSL, MSYS2 or Cygwin:
 Install on Windows:
  - Download and install X server VcXsrv from: 
      https://sourceforge.net/projects/vcxsrv/
+(In Cygwin you can install XWin (package xinit) instead of VcXsrv.)
 
 Usage:
 You can create an entry in ~/.bashrc to always have an X server available.
 Possible entry in ~/.bashrc:     source /usr/local/bin/runx
 
-Example to run an application directly with runx:
+Example to directly run an application with runx:
  - Install file manager pcmanfm: sudo apt update
                                  sudo apt install pcmanfm
  - Run pcmanfm with:             runx -- pcmanfm
@@ -53,7 +55,7 @@ finish() {                      # Clean up and terminate
   case "$Sourced" in
     yes)
       unset -f finish error warning note verbose rmcr escapestring check_host check_displaynumber generate_xcommand setup_cookie convertpath getwslpath declare_variables parse_options check_dependencies main
-      Exitcode="${Exitcode:-0}"
+      Exitcode="${1:-0}"
     ;;
     no)
       exit "${1:-0}"
@@ -217,6 +219,7 @@ check_host() {
 }
 
 check_displaynumber() {         # Find free display number, print on stdout
+  verbose "Searching for free display number."
   for ((Newdisplaynumber=100 ; Newdisplaynumber <=1000 ; Newdisplaynumber++)); do
     grep -q -E 'Authorization|Absolute|MIT-MAGIC-COOKIE' <<< "$(xwininfo -display $Hostip:$Newdisplaynumber -root 2>&1)" || break
   done
@@ -224,12 +227,13 @@ check_displaynumber() {         # Find free display number, print on stdout
 
 generate_xcommand() {           # Generate command to start X server VcXsrv
   
-  Xcommand="$(escapestring "$Vcxsrvexe") :$Newdisplaynumber -listen tcp -retro -lesspointer"
+
+  Xcommand="$(escapestring "$Xserverexe") :$Newdisplaynumber -listen tcp -retro -lesspointer"
   
   # GPU hardware acceleration
   case $Sharegpu in
-    yes)  Xcommand="$Xcommand -wgl   +iglx" ; export LIBGL_ALWAYS_INDIRECT=1 ;;
-    no|*) Xcommand="$Xcommand -nowgl -iglx" ; unset  LIBGL_ALWAYS_INDIRECT   ;;
+    yes) Xcommand="$Xcommand -wgl   +iglx" ; export LIBGL_ALWAYS_INDIRECT=1 ;;
+    no)  Xcommand="$Xcommand -nowgl -iglx" ; unset  LIBGL_ALWAYS_INDIRECT   ;;
   esac
   
   # Seamless or desktop mode
@@ -237,12 +241,17 @@ generate_xcommand() {           # Generate command to start X server VcXsrv
       
   # Clipboard
   case $Shareclipboard in
-    yes)    Xcommand="$Xcommand -clipboard" ;;
-    no|*)   Xcommand="$Xcommand -noclipboard" ;;
+    yes) Xcommand="$Xcommand -clipboard" ;;
+    no)  Xcommand="$Xcommand -noclipboard" ;;
   esac
 
   case $Xauthentication in
-    yes) Xcommand="$Xcommand -auth '$(convertpath --windows "$Xservercookie")'" ;;
+    yes) 
+      case "$Xserverexe" in
+        "$Xwinexe")   Xcommand="$Xcommand -auth '$Xservercookie'" ;;
+        "$Vcxsrvexe") Xcommand="$Xcommand -auth '$(convertpath --windows "$Xservercookie")'" ;;
+      esac
+    ;;
     no)  Xcommand="$Xcommand -ac" ;;
   esac
   
@@ -274,7 +283,7 @@ setup_cookie() {             # Generate X authentication cookie
 
   # remove old cookies if no VcXsrv is running yet
   command -v tasklist.exe >/dev/null && {
-    tasklist.exe | rmcr | grep -q vcxsrv.exe || {
+    tasklist.exe | rmcr | grep -q -E 'vcxsrv.exe|XWin.exe' || {
       verbose "Removing old cookies."
       [ -e "$Xservercookie" ] && rm "$Xservercookie"
       [ -e "$Xclientcookie" ] && rm "$Xclientcookie"
@@ -335,7 +344,9 @@ getwslpath() {                  # get path to currently running WSL system
 
 cleanup() {
   # kill all instances of VcXsrv and remove cookies
+  MSYS2_ARG_CONV_EXCL='*' tasklist.exe | rmcr | grep -E 'vcxsrv.exe|XWin.exe'
   MSYS2_ARG_CONV_EXCL='*' taskkill.exe /F /PID vcxsrv.exe
+  MSYS2_ARG_CONV_EXCL='*' taskkill.exe /F /PID xwin.exe
   # Remove cookies
   Newdisplaynumber=0
   setup_cookie
@@ -371,13 +382,15 @@ declare_variables() {
   Winsubmount=""
   Winsubpath=""
   Xcommand=""
+  Xserverexe=""
+  Xwinexe=""
 }
 
 parse_options() {
   
   local Shortoptions Longoptions Parsererror
   Shortoptions="cdghv"
-  Longoptions="desktop,gpu::,clipboard::,display:,no-auth,help,verbose,cleanup"
+  Longoptions="desktop,gpu::,clipboard::,display:,no-auth,help,verbose,version,cleanup"
   
   Parsedoptions="$(getopt --options $Shortoptions --longoptions $Longoptions --name "$0" -- "$@" 2>/tmp/runx_parsererror)"
   [ -e /tmp/runx_parsererror ] && Parsererror=$(cat /tmp/runx_parsererror) && rm /tmp/runx_parsererror
@@ -386,11 +399,12 @@ parse_options() {
   verbose "$Parsedoptions"
   while [ $# -gt 0 ]; do
     case "${1:-}" in
+         --version)   echo "runx version $Version"; Exitcode=0 ;;
          --no-auth)   Xauthentication="no" ;;
          --cleanup)   Cleanup="yes" ;;
       -c|--clipboard) Clipboard="${2:-yes}"; shift ;;
       -d|--desktop)   Desktopmode="yes" ;;
-         --display)   Newdisplaynumber="$(tr -d: <<< "${2:-}")" ; shift ;;
+         --display)   Newdisplaynumber="${2:-}" ; shift ;;
       -g|--gpu)       Sharegpu="${2:-yes}" ;;
       -h|--help)      usage; finish ;;
       -v|--verbose)   Verbose="yes" ;;
@@ -439,24 +453,32 @@ check_dependencies() {
   # mcookie ### FIXME
   
   Vcxsrvexe="$(command -v vcxsrv.exe)"
-  [ "$Vcxsrvexe" ] || Vcxsrvexe="$(convertpath --subsystem "C:/Program Files/VcXsrv/vcxsrv.exe")"
+  [ "$Vcxsrvexe" ] || Vcxsrvexe="$(command -v "$(convertpath --subsystem "C:/Program Files/VcXsrv/vcxsrv.exe")")"
+  Xwinexe="$(command -v XWin)"
+  verbose "Found X servers:
+  $Vcxsrvexe
+  $Xwinexe"
+  Xserverexe="${Xwinexe:-$Vcxsrvexe}"
 
   for Line in cmd.exe ipconfig.exe powershell.exe tasklist.exe taskkill.exe; do
     check_dependency "$Line" || error "Did not find Windows command: $Line"
   done
   
-  check_dependency "${Vcxsrvexe:-vcxsrv.exe}" || {
-    error "X server VcXsrv not found. Please install VcXsrv on Windows from: 
-  https://sourceforge.net/projects/vcxsrv/"
+  check_dependency "${Xserverexe:-vcxsrv.exe}" || {
+    case $Winsubsystem in
+      CYGWIN) error "No X server found. 
+  Please install VcXsrv on Windows: https://sourceforge.net/projects/vcxsrv
+  or install Cygwin packages xinit, xauth and xwininfo." ;;
+      *) error "X server VcXsrv not found. Please install VcXsrv on Windows from: 
+  https://sourceforge.net/projects/vcxsrv/" ;;
+    esac
   }
 }
 
 main() {
-  
   [ "$Newdisplaynumber" ] || check_displaynumber
   [ "$Xauthentication" = "yes" ] && setup_cookie
   generate_xcommand
-  
 
   export DISPLAY=$Hostip:$Newdisplaynumber
   case "$Xauthentication" in
@@ -474,6 +496,12 @@ main() {
   
   [ "$Verbose" = "yes" ] && Xcommand="$Xcommand 1>&2" || Xcommand="$Xcommand >/dev/null 2>&1"
   { [ "$Hostcommand" ] || [ "$Sourced" = "yes" ] ; }  && Xcommand="$Xcommand & RUNX_XPID=\$!"
+  
+  note "Windows firewall settings can forbid application access
+  to the X server. If no application window appears, but no obvious error
+  is shown, please check your firewall settings. 
+  Compare:  https://github.com/mviereck/x11docker/issues/108
+  Just in case of broken cookies also run:  runx --cleanup"
   
   eval $Xcommand
   
@@ -503,9 +531,6 @@ finish "${Exitcode:-0}"
 
 todo() {
   :
-  # support of MSYS2 and Cygwin?
-  # runx
-  # dependency check vcxsrv
-  # xwin
-  # terminate X if not sourced
+  # Options --xwin and --vcxsrv
+  # --xwin for WSL and MSYS2
 }
