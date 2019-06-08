@@ -1,10 +1,10 @@
 #! /bin/bash
 # runx: Provide an X server in WSL
 
-Version="0.1.4"
+Version="0.2.0"
 
 usage() {                       # Usage information (--help)
-  echo "runx - Provide an X server on MS Windows in WSL, MSYS2 or Cygwin
+  echo "runx - Provide an X server on MS Windows in Cygwin, MSYS2 or WSL.
 Run Linux GUI applications on MS Windows.
 
 Syntax:
@@ -16,23 +16,34 @@ Options:
   -g, --gpu [=yes|no]            Enable GPU hardware acceleration. Default: no.
                                  Can fail with NVIDIA cards. Works better with
                                  XWin in Cygwin than with VcXsrv.
-  -c, --clipboard [=yes|no]      Enable clipboard sharing yes/no. Default: yes.
+      --clipboard [=yes|no]      Enable clipboard sharing yes/no. Default: yes.
+      --vcxsrv                   Use X server VcXsrv.
+      --xwin                     Use X server XWin.
       --display N                Display number N for new X server.
       --no-auth                  Disable X cookie authentication. Discouraged.
       --cleanup                  Stop all X servers and delete cookies.
   -v, --verbose                  Be verbose.
 
-Installation in WSL, MSYS2 or Cygwin:
+Installation of runx in WSL, MSYS2 or Cygwin:
  - Copy runx into /usr/local/bin/
  - Make runx executeable:        sudo chmod +x /usr/local/bin/runx
- - Install xauth and xwininfo:   sudo apt install xauth x11-utils
-Install on Windows:
- - Download and install X server VcXsrv from: 
-     https://sourceforge.net/projects/vcxsrv/
-(In Cygwin you can install XWin (package xinit) instead of VcXsrv.)
+ - Install xauth and xwininfo:   sudo apt update
+                                 sudo apt install xauth x11-utils
+ 
+Install an X server on Windows:
+  runx supports two X servers: VcXsrv and XWin. Install at least one of them.
+   - VcXsrv: Download and install from: 
+       https://sourceforge.net/projects/vcxsrv/
+   - XWin: Download and install Cygwin64 with packages: xinit xauth xwininfo
+       https://www.cygwin.com
+VcXsrv is easier to install. XWin provides a better GPU support.
+
+WSL, Cygwin:       runx starts XWin if available, otherwise it starts VcXsrv.
+MSYS2 constraints: runx only supports VcXsrv without cookie authentication.
 
 Usage:
 You can create an entry in ~/.bashrc to always have an X server available.
+In that case you don't need to type 'runx' anymore.
 Possible entry in ~/.bashrc:     source /usr/local/bin/runx
 
 Example to directly run an application with runx:
@@ -54,7 +65,12 @@ finish() {                      # Clean up and terminate
   }
   case "$Sourced" in
     yes)
-      unset -f finish error warning note verbose rmcr escapestring check_host check_displaynumber generate_xcommand setup_cookie convertpath getwslpath declare_variables parse_options check_dependencies main
+      unset -f usage finish
+      unset -f error warning note verbose
+      unset -f rmcr getwslpath escapestring convertpath
+      unset -f check_host check_dependency check_dependencies check_displaynumber setup_cookie generate_xcommand
+      unset -f cleanup
+      unset -f declare_variables parse_options main
       Exitcode="${1:-0}"
     ;;
     no)
@@ -83,12 +99,50 @@ verbose() {                     # Show verbose message (--verbose)
   [ "$Verbose" = "yes" ] && note "$*"
 }
 
+#### general routines
+
 rmcr() {                        # Remove carriage return to translate DOS/Windows newlines into UNIX newlines.
   # Convert stdin if $1 is empty. Otherwise convert file $1.
   case "${1:-}" in
     "") sed    "s/$(printf "\r")//g" ;;
     *)  sed -i "s/$(printf "\r")//g"  "${1:-}"
   esac
+}
+
+getwslpath() {                  # get path to currently running WSL system
+
+  # Fork from https://github.com/Microsoft/WSL/issues/2578#issuecomment-354010141
+  
+  local RUN_ID= BASE_PATH=
+  
+  RUN_ID="/tmp/$(mcookie)"
+
+  # Mark our filesystem with a temporary file having an unique name.
+  touch "${RUN_ID}"
+
+  powershell.exe -Command '(Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss | ForEach-Object {Get-ItemProperty $_.PSPath}).BasePath.replace(":", "").replace("\", "/")' | while IFS= read -r BASEPATH; do
+    # Remove trailing whitespaces.
+    BASEPATH="${BASEPATH%"${BASEPATH##*[![:space:]]}"}"
+    # Build the path on WSL.
+    BASEPATH="/mnt/${BASEPATH,}/rootfs"
+
+    # Current WSL instance doesn't have an access to its mount from within
+    # itself despite all others are available. That's the hacky way we're
+    # using to determine current instance.
+    #
+    # The second of part of the condition is a fallback for a case if our
+    # trick will stop working. For that we've created a temporary file with
+    # an unique name and now seeking it among all WLSs.
+    if ! ls "${BASEPATH}" > /dev/null 2>&1 || [ -f "${BASEPATH}${RUN_ID}" ]; then
+      echo "${BASEPATH}"
+      # You can create and simultaneously run multiple WSL instances, comment
+      # out the "break", run this script within each one and it'll return only
+      # single value.
+      break
+    fi
+  done
+  rm "${RUN_ID}"
+  return 0
 }
 
 escapestring() {                # Escape special chars of $1
@@ -187,7 +241,9 @@ convertpath() {                 # Convert unix and windows pathes
   return 0
 }
 
-check_host() {
+#### setup
+
+check_host() {                  # Check host environment
 
   # Check for MS Windows subsystem
   uname -r | grep -q Microsoft                    && Winsubsystem="WSL"
@@ -215,7 +271,95 @@ check_host() {
   [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr | grep 'IPv4' | head -n1 | | rev | cut -d' ' -f1 | rev)"
   verbose "Host IP adress: $Hostip"
   
+  [ "$Xauthentication" = "yes" ] && [ "$Winsubsystem" = "MSYS2" ] && {
+    note "MSYS2 does not provide xauth to create a cookie.
+  Fallback: Enabling discouraged option --no-auth."
+    Xauthentication="no"
+  }
+  
   return 0
+}
+
+check_dependency() {            # Check for single command
+  command -v "${1:-}" >/dev/null || {
+    note "Command not found: ${1:-}"
+    return 1
+  }
+  return 0
+}
+
+check_dependencies() {          # Check all dependencies
+  local Line
+  
+  case "$Winsubsystem" in
+    WSL|CYGWIN|MSYS2) ;;
+    *) error "runx is designed to run on MS Windows in WSL, Cygwin or MSYS2.
+  Did not detect WSL, Cygwin or MSYS2." ;; ###
+  esac
+  
+  [ "$Xauthentication" = "yes" ] && {
+    check_dependency xauth || error "Missing dependency: xauth
+  Cannot create an authorization cookie for X server access.
+  Please install package in $Winsubsystem:  xauth
+  You can disable cookie authentication with discouraged option --no-auth."
+  }
+  [ "$Newdisplaynumber" ] || {
+    check_dependency xwininfo || {
+      Newdisplaynumber="$((RANDOM / 10))"
+      warning "Missing dependency: xwininfo
+  Cannot check for a free display number.
+  Please install package in $Winsubsystem:  xwininfo  or  x11-utils
+  Fallback: Using random display number :$Newdisplaynumber .
+  If this display number is already in use, the startup will fail.
+  You can specify a custom display number with option --display=N."
+    }
+  }
+  # mcookie ### FIXME
+  
+  Vcxsrvexe="$(command -v vcxsrv.exe)"
+  [ "$Vcxsrvexe" ] || Vcxsrvexe="$(command -v "$(convertpath --subsystem "C:/Program Files/VcXsrv/vcxsrv.exe")")"
+  Xwinexe="$(command -v XWin)"
+  [ -z "$Xwinexe" ] && [ "$Winsubsystem" = "WSL" ] && {
+    for Drive in /mnt/*; do
+      Xwinexe="$(command -v "$Drive/cygwin64/bin/XWin.exe")"
+      [ "$Xwinexe" ] && break
+      Xwinexe="$(command -v "$Drive/cygwin32/bin/XWin.exe")"
+      [ "$Xwinexe" ] && break
+    done
+  }
+  verbose "Found X servers:
+  $Vcxsrvexe
+  $Xwinexe"
+
+  for Line in cmd.exe ipconfig.exe powershell.exe tasklist.exe taskkill.exe; do
+    check_dependency "$Line" || error "Did not find Windows command: $Line"
+  done
+  
+  [ -z "$Xserver" ] && {
+    check_dependency "$Vcxsrvexe" && Xserver="vcxsrv"
+    check_dependency "$Xwinexe"   && Xserver="xwin"
+    [ "$Winsubsystem" = "MSYS2" ] && Xserver="vcxsrv"
+  }
+  case "$Xserver" in
+    vcxsrv) Xserverexe="$Vcxsrvexe" ;;
+    xwin)   Xserverexe="$Xwinexe" ;;
+  esac
+  
+  check_dependency "${Xserverexe}" || { ### FIXME
+    case $Winsubsystem in
+      WSL|CYGWIN) 
+        error "No X server found. 
+  Please either install X server VcXsrv:
+      https://sourceforge.net/projects/vcxsrv
+  or install Cygwin with packages xinit, xauth and xwininfo to provide XWin:
+      https://www.cygwin.com/" ;;
+      MSYS2)
+        [ "$Xserver" = "xwin" ] && error "runx in MSYS2 does not support --xwin."
+        error "X server $Xserver not found. Please install X server VcXsrv: 
+  https://sourceforge.net/projects/vcxsrv/"
+      ;;
+    esac
+  }
 }
 
 check_displaynumber() {         # Find free display number, print on stdout
@@ -223,55 +367,10 @@ check_displaynumber() {         # Find free display number, print on stdout
   for ((Newdisplaynumber=100 ; Newdisplaynumber <=1000 ; Newdisplaynumber++)); do
     grep -q -E 'Authorization|Absolute|MIT-MAGIC-COOKIE' <<< "$(xwininfo -display $Hostip:$Newdisplaynumber -root 2>&1)" || break
   done
+  verbose "Found free display number: $Newdisplaynumber"
 }
 
-generate_xcommand() {           # Generate command to start X server VcXsrv
-  
-
-  Xcommand="$(escapestring "$Xserverexe") :$Newdisplaynumber -listen tcp -retro -lesspointer"
-  
-  # GPU hardware acceleration
-  case $Sharegpu in
-    yes) Xcommand="$Xcommand -wgl   +iglx" ; export LIBGL_ALWAYS_INDIRECT=1 ;;
-    no)  Xcommand="$Xcommand -nowgl -iglx" ; unset  LIBGL_ALWAYS_INDIRECT   ;;
-  esac
-  
-  # Seamless or desktop mode
-  [ "$Desktopmode" = "no" ] && Xcommand="$Xcommand -multiwindow"
-      
-  # Clipboard
-  case $Shareclipboard in
-    yes) Xcommand="$Xcommand -clipboard" ;;
-    no)  Xcommand="$Xcommand -noclipboard" ;;
-  esac
-
-  case $Xauthentication in
-    yes) 
-      case "$Xserverexe" in
-        "$Xwinexe")   Xcommand="$Xcommand -auth '$Xservercookie'" ;;
-        "$Vcxsrvexe") Xcommand="$Xcommand -auth '$(convertpath --windows "$Xservercookie")'" ;;
-      esac
-    ;;
-    no)  Xcommand="$Xcommand -ac" ;;
-  esac
-  
-  # X server extensions
-  Xcommand="$Xcommand \
-  +extension RANDR \
-  +extension RENDER \
-  +extension GLX \
-  +extension DOUBLE-BUFFER \
-  +extension SECURITY \
-  +extension DAMAGE \
-  +extension COMPOSITE \
-  -extension X-Resource \
-  -extension XTEST"
-  
-  verbose "Generated X command:
-  $Xcommand"
-}
-
-setup_cookie() {             # Generate X authentication cookie
+setup_cookie() {                # Generate X authentication cookie
   local Cookie
   
   Xclientcookie="$(convertpath --subsystem "~/runx_Xauthority")"
@@ -306,43 +405,59 @@ $(xauth -v -f "$Xclientcookie" list)"
 $(xauth -v -f "$Xservercookie" list)"
 }
 
-getwslpath() {                  # get path to currently running WSL system
-
-  # Fork from https://github.com/Microsoft/WSL/issues/2578#issuecomment-354010141
+generate_xcommand() {           # Generate command to start X server VcXsrv
   
-  local RUN_ID= BASE_PATH=
+
+  Xcommand="$(escapestring "$Xserverexe") :$Newdisplaynumber -listen tcp -retro -lesspointer"
   
-  RUN_ID="/tmp/$(mcookie)"
+  # GPU hardware acceleration
+  case $Sharegpu in
+    yes) Xcommand="$Xcommand -wgl   +iglx" ; export LIBGL_ALWAYS_INDIRECT=1 
+      [ "$Xserver" = "vcxsrv" ] && note "GPU support of VcXsrv has some issues.
+  If it does not work or crashes, try runx with option --xwin instead."
+    ;;
+    no)  Xcommand="$Xcommand -nowgl -iglx" ; unset  LIBGL_ALWAYS_INDIRECT   ;;
+  esac
+  
+  # Seamless or desktop mode
+  [ "$Desktopmode" = "no" ] && Xcommand="$Xcommand -multiwindow"
+      
+  # Clipboard
+  case $Shareclipboard in
+    yes) Xcommand="$Xcommand -clipboard" ;;
+    no)  Xcommand="$Xcommand -noclipboard" ;;
+  esac
 
-  # Mark our filesystem with a temporary file having an unique name.
-  touch "${RUN_ID}"
-
-  powershell.exe -Command '(Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss | ForEach-Object {Get-ItemProperty $_.PSPath}).BasePath.replace(":", "").replace("\", "/")' | while IFS= read -r BASEPATH; do
-    # Remove trailing whitespaces.
-    BASEPATH="${BASEPATH%"${BASEPATH##*[![:space:]]}"}"
-    # Build the path on WSL.
-    BASEPATH="/mnt/${BASEPATH,}/rootfs"
-
-    # Current WSL instance doesn't have an access to its mount from within
-    # itself despite all others are available. That's the hacky way we're
-    # using to determine current instance.
-    #
-    # The second of part of the condition is a fallback for a case if our
-    # trick will stop working. For that we've created a temporary file with
-    # an unique name and now seeking it among all WLSs.
-    if ! ls "${BASEPATH}" > /dev/null 2>&1 || [ -f "${BASEPATH}${RUN_ID}" ]; then
-      echo "${BASEPATH}"
-      # You can create and simultaneously run multiple WSL instances, comment
-      # out the "break", run this script within each one and it'll return only
-      # single value.
-      break
-    fi
-  done
-  rm "${RUN_ID}"
-  return 0
+  case $Xauthentication in
+    yes) 
+      case "$Xserver" in
+        xwin) case "$Winsubsystem" in
+                CYGWIN)   Xcommand="$Xcommand -auth '$Xservercookie'" ;;
+                WSL)      Xcommand="$Xcommand -auth '/cygdrive${Xservercookie#$Winsubmount}'" ;;
+              esac ;;
+        vcxsrv)           Xcommand="$Xcommand -auth '$(convertpath --windows "$Xservercookie")'" ;;
+      esac ;;
+    no)                   Xcommand="$Xcommand -ac" ;;
+  esac
+  
+  # X server extensions
+  Xcommand="$Xcommand \
+  +extension RANDR \
+  +extension RENDER \
+  +extension GLX \
+  +extension DOUBLE-BUFFER \
+  +extension DAMAGE \
+  +extension COMPOSITE \
+  -extension X-Resource \
+  -extension XTEST"
+  
+  verbose "Generated X command:
+  $Xcommand"
 }
 
-cleanup() {
+#### special jobs
+
+cleanup() {                     # --cleanup: Terminate X servers, delete cookies.
   # kill all instances of VcXsrv and remove cookies
   MSYS2_ARG_CONV_EXCL='*' tasklist.exe | rmcr | grep -E 'vcxsrv.exe|XWin.exe'
   MSYS2_ARG_CONV_EXCL='*' taskkill.exe /F /PID vcxsrv.exe
@@ -353,11 +468,13 @@ cleanup() {
   rm -v "$Xclientcookie" "$Xservercookie"
 }
 
+#### main
+
 declare_variables() {
   # Default values
   Desktopmode="no"
   Screensize="" ###
-  Shareclipboard="no" ###
+  Shareclipboard="yes"
   Sharegpu="no"
   Verbose="no"
   Xauthentication="yes"
@@ -376,39 +493,43 @@ declare_variables() {
   # Empty global vars needed later
   Exitcode=""
   Hostip=""
+  Logfile=""
   Newdisplaynumber=""
   Sourced=""
   Vcxsrvexe=""
   Winsubmount=""
   Winsubpath=""
   Xcommand=""
+  Xserver=""
   Xserverexe=""
   Xwinexe=""
 }
 
 parse_options() {
-  
   local Shortoptions Longoptions Parsererror
-  Shortoptions="cdghv"
-  Longoptions="desktop,gpu::,clipboard::,display:,no-auth,help,verbose,version,cleanup"
+  
+  Shortoptions="dghv"
+  Longoptions="desktop,gpu::,clipboard::,display:,no-auth,help,verbose,version,cleanup,vcxsrv,xwin"
   
   Parsedoptions="$(getopt --options $Shortoptions --longoptions $Longoptions --name "$0" -- "$@" 2>/tmp/runx_parsererror)"
   [ -e /tmp/runx_parsererror ] && Parsererror=$(cat /tmp/runx_parsererror) && rm /tmp/runx_parsererror
   [ "$Parsererror" ] && error "$Parsererror"
   eval set -- "$Parsedoptions"
   verbose "$Parsedoptions"
+  
   while [ $# -gt 0 ]; do
     case "${1:-}" in
-         --version)   echo "runx version $Version"; Exitcode=0 ;;
-         --no-auth)   Xauthentication="no" ;;
-         --cleanup)   Cleanup="yes" ;;
-      -c|--clipboard) Clipboard="${2:-yes}"; shift ;;
-      -d|--desktop)   Desktopmode="yes" ;;
-         --display)   Newdisplaynumber="${2:-}" ; shift ;;
-      -g|--gpu)       Sharegpu="${2:-yes}" ;;
-      -h|--help)      usage; finish ;;
-      -v|--verbose)   Verbose="yes" ;;
-      --) shift;      Hostcommand="$@"; break ;;
+         --version)       echo "runx version $Version"; Exitcode=0 ;;
+         --no-auth)       Xauthentication="no" ;;
+         --cleanup)       Cleanup="yes" ;;
+         --clipboard)     Clipboard="${2:-yes}"; shift ;;
+      -d|--desktop)       Desktopmode="yes" ;;
+         --display)       Newdisplaynumber="${2:-}" ; shift ;;
+      -g|--gpu)           Sharegpu="${2:-yes}" ;;
+      -h|--help)          usage; finish ;;
+      -v|--verbose)       Verbose="yes" ;;
+         --vcxsrv|--xwin) Xserver="${1:-}" ; Xserver="${Xserver#--}" ;;
+      --) shift;          Hostcommand="$@"; break ;;
       *) error "Unknown option: ${1:-}
   $(usage 2>&1)"
     esac
@@ -416,70 +537,21 @@ parse_options() {
   done
 }
 
-check_dependency() {
-  command -v "${1:-}" >/dev/null || {
-    note "Command not found: ${1:-}"
-    return 1
-  }
-  return 0
-}
-
-check_dependencies() {
-  local Line
-  
-  case "$Winsubsystem" in
-    WSL|CYGWIN|MSYS2) ;;
-    *) error "runx is designed to run on MS Windows in WSL, Cygwin or MSYS2.
-  Did not detect WSL, Cygwin or MSYS2." ;; ###
-  esac
-  
-  [ "$Xauthentication" = "yes" ] && {
-    check_dependency xauth || error "Missing dependency: xauth
-  Cannot create an authorization cookie for X server access.
-  Please install package in $Winsubsystem:  xauth
-  You can disable cookie authentication with discouraged option --no-auth."
-  }
-  [ "$Newdisplaynumber" ] || {
-    check_dependency xwininfo || {
-      Newdisplaynumber="$((RANDOM / 10))"
-      warning "Missing dependency: xwininfo
-  Cannot check for a free display number.
-  Please install package in $Winsubsystem:  xwininfo  or  x11-utils
-  Fallback: Using random display number :$Newdisplaynumber .
-  If this display number is already in use, the startup will fail.
-  You can specify a custom display number with option --display=N."
-    }
-  }
-  # mcookie ### FIXME
-  
-  Vcxsrvexe="$(command -v vcxsrv.exe)"
-  [ "$Vcxsrvexe" ] || Vcxsrvexe="$(command -v "$(convertpath --subsystem "C:/Program Files/VcXsrv/vcxsrv.exe")")"
-  Xwinexe="$(command -v XWin)"
-  verbose "Found X servers:
-  $Vcxsrvexe
-  $Xwinexe"
-  Xserverexe="${Xwinexe:-$Vcxsrvexe}"
-
-  for Line in cmd.exe ipconfig.exe powershell.exe tasklist.exe taskkill.exe; do
-    check_dependency "$Line" || error "Did not find Windows command: $Line"
-  done
-  
-  check_dependency "${Xserverexe:-vcxsrv.exe}" || {
-    case $Winsubsystem in
-      CYGWIN) error "No X server found. 
-  Please install VcXsrv on Windows: https://sourceforge.net/projects/vcxsrv
-  or install Cygwin packages xinit, xauth and xwininfo." ;;
-      *) error "X server VcXsrv not found. Please install VcXsrv on Windows from: 
-  https://sourceforge.net/projects/vcxsrv/" ;;
-    esac
-  }
-}
-
 main() {
+  local Waiting
+
   [ "$Newdisplaynumber" ] || check_displaynumber
   [ "$Xauthentication" = "yes" ] && setup_cookie
   generate_xcommand
 
+  [ "$Sourced" = "no" ] && note "Windows firewall settings can forbid application access
+  to the X server. If no application window appears, but no obvious error
+  is shown, please check your firewall settings. 
+  Compare:  https://github.com/mviereck/x11docker/issues/108
+  Another possible reason for failing startup are broken cookies.
+  You can remove cookies and running X servers with: runx --cleanup"
+  
+  # set DISPLAY and XAUTHORITY, output on stdout
   export DISPLAY=$Hostip:$Newdisplaynumber
   case "$Xauthentication" in
     yes)
@@ -491,30 +563,45 @@ main() {
       unset XAUTHORITY
       verbose "DISPLAY=$DISPLAY"
       echo "DISPLAY=$DISPLAY"
+      warning "Option --no-auth: Cookie authentication is disabled!
+  Your X server $Xserver listens on TCP connections without any protection!
+  This is a security leak. Please use option --no-auth for debugging only."
     ;;
   esac
   
-  [ "$Verbose" = "yes" ] && Xcommand="$Xcommand 1>&2" || Xcommand="$Xcommand >/dev/null 2>&1"
+  # set up X log
+  Logfile="/tmp/runx_X${Newdisplaynumber}.log"
+  :> "$Logfile"
+  [ "$Verbose" = "yes" ] && tail -F "$Logfile" 1>&2 &
+  Xcommand="$Xcommand >> '$Logfile' 2>&1"
+  
+  # Run X in background?
   { [ "$Hostcommand" ] || [ "$Sourced" = "yes" ] ; }  && Xcommand="$Xcommand & RUNX_XPID=\$!"
+
+  eval $Xcommand 
   
-  note "Windows firewall settings can forbid application access
-  to the X server. If no application window appears, but no obvious error
-  is shown, please check your firewall settings. 
-  Compare:  https://github.com/mviereck/x11docker/issues/108
-  Just in case of broken cookies also run:  runx --cleanup"
-  
-  eval $Xcommand
-  
+  # Check for successfull startup
   [ "$RUNX_XPID" ] && {
     export RUNX_XPID
     verbose "PID of X server: $RUNX_XPID
   $(ps -p "$RUNX_XPID")"
+    case "$Xserver" in
+      xwin)
+        for Waiting in 1 2 3 4 5 6 7 8 9 10; do
+          sleep 1
+          grep -q "successfully opened the display" "$Logfile" && break
+        done
+        [ "$Waiting" = "10" ] && error "X server XWin not ready after 10s."
+      ;;
+      vcxsrv) sleep 1 ;;
+    esac
   } || unset RUNX_XPID
-   
+  
   [ "$Sourced" = "yes" ]     && export RUNX_SOURCED=1 || unset RUNX_SOURCED
   [ "$Desktopmode" = "yes" ] && export RUNX_DESKTOP=1 || unset RUNX_DESKTOP
   
-  [ "$Hostcommand" ] && {
+  # Run host command
+  [ -z "$Exitcode" ] && [ "$Hostcommand" ] && {
     verbose "Executing command:
   $Hostcommand"
     eval $Hostcommand
@@ -526,11 +613,5 @@ parse_options "$@"
 check_host
 check_dependencies
 [ "$Cleanup" = "yes" ] && cleanup && Exitcode="${Exitcode:-0}"
-[ "$Exitcode" ] || main
+[ -z "$Exitcode" ]     && main
 finish "${Exitcode:-0}"
-
-todo() {
-  :
-  # Options --xwin and --vcxsrv
-  # --xwin for WSL and MSYS2
-}
