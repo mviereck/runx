@@ -24,7 +24,7 @@ Options:
       --cleanup                  Stop all X servers and delete cookies.
   -v, --verbose                  Be verbose.
 
-Installation of runx in WSL, MSYS2 or Cygwin:
+Installation of runx in Cygwin, MSYS2 or WSL:
  - Copy runx into /usr/local/bin/
  - Make runx executeable:        sudo chmod +x /usr/local/bin/runx
  - Install xauth and xwininfo:   sudo apt update
@@ -54,6 +54,11 @@ Example to directly run an application with runx:
 Example to run Mate desktop:
  - Install Mate desktop with:    sudo apt install mate-desktop-environment
  - Run Mate desktop with:        runx --desktop -- mate-session
+ 
+Example to get a Wayland environment:
+ - Install Wayland compositor:   sudo apt install weston
+ - Run Weston with:              XDG_RUNTIME_DIR=/tmp  runx -- weston
+
 
 runx version $Version" >&2
 }
@@ -281,6 +286,7 @@ check_host() {                  # Check host environment
 }
 
 check_dependency() {            # Check for single command
+  [ "${1:-}" ] || return 1
   command -v "${1:-}" >/dev/null || {
     note "Command not found: ${1:-}"
     return 1
@@ -308,10 +314,10 @@ check_dependencies() {          # Check all dependencies
       Newdisplaynumber="$((RANDOM / 10))"
       warning "Missing dependency: xwininfo
   Cannot check for a free display number.
-  Please install package in $Winsubsystem:  xwininfo  or  x11-utils
-  Fallback: Using random display number :$Newdisplaynumber .
+  Fallback: Using random display number $Newdisplaynumber.
   If this display number is already in use, the startup will fail.
-  You can specify a custom display number with option --display=N."
+  You can specify a custom display number with option --display=N.
+  $([ "$Winsubsystem" = "MSYS2" ] || echo "  Please install package in $Winsubsystem:  xwininfo  or  x11-utils" )"
     }
   }
   # mcookie ### FIXME
@@ -509,7 +515,7 @@ parse_options() {
   local Shortoptions Longoptions Parsererror
   
   Shortoptions="dghv"
-  Longoptions="desktop,gpu::,clipboard::,display:,no-auth,help,verbose,version,cleanup,vcxsrv,xwin"
+  Longoptions="desktop,gpu,clipboard::,display:,no-auth,help,verbose,version,cleanup,vcxsrv,xwin"
   
   Parsedoptions="$(getopt --options $Shortoptions --longoptions $Longoptions --name "$0" -- "$@" 2>/tmp/runx_parsererror)"
   [ -e /tmp/runx_parsererror ] && Parsererror=$(cat /tmp/runx_parsererror) && rm /tmp/runx_parsererror
@@ -525,7 +531,7 @@ parse_options() {
          --clipboard)     Clipboard="${2:-yes}"; shift ;;
       -d|--desktop)       Desktopmode="yes" ;;
          --display)       Newdisplaynumber="${2:-}" ; shift ;;
-      -g|--gpu)           Sharegpu="${2:-yes}" ;;
+      -g|--gpu)           Sharegpu="yes" ;;
       -h|--help)          usage; finish ;;
       -v|--verbose)       Verbose="yes" ;;
          --vcxsrv|--xwin) Xserver="${1:-}" ; Xserver="${Xserver#--}" ;;
@@ -548,8 +554,8 @@ main() {
   to the X server. If no application window appears, but no obvious error
   is shown, please check your firewall settings. 
   Compare:  https://github.com/mviereck/x11docker/issues/108
-  Another possible reason for failing startup are broken cookies.
-  You can remove cookies and running X servers with: runx --cleanup"
+  Another possible reason forma failing startup are broken cookies.
+  You can remove cookies and stop running X servers with: runx --cleanup"
   
   # set DISPLAY and XAUTHORITY, output on stdout
   export DISPLAY=$Hostip:$Newdisplaynumber
@@ -572,7 +578,9 @@ main() {
   # set up X log
   Logfile="/tmp/runx_X${Newdisplaynumber}.log"
   :> "$Logfile"
-  [ "$Verbose" = "yes" ] && tail -F "$Logfile" 1>&2 &
+  [ "$Verbose" = "yes" ] && {
+    tail -f "$Logfile" 1>&2 &
+  }
   Xcommand="$Xcommand >> '$Logfile' 2>&1"
   
   # Run X in background?
