@@ -1,7 +1,7 @@
 #! /bin/bash
 # runx: Provide an X server in WSL
 
-Version="0.2.0"
+Version="v0.2.1"
 
 usage() {                       # Usage information (--help)
   echo "runx - Provide an X server on MS Windows in Cygwin, MSYS2 or WSL.
@@ -13,13 +13,12 @@ Syntax:
 Options:
   -h, --help                     Show this help.
   -d, --desktop                  Open a parent window for desktop environments.
-  -g, --gpu [=yes|no]            Enable GPU hardware acceleration. Default: no.
-                                 Can fail with NVIDIA cards. Works better with
-                                 XWin in Cygwin than with VcXsrv.
+  -g, --gpu                      Enable GPU hardware acceleration. Can fail 
+                                 with NVIDIA cards. Works best with XWin.
       --clipboard [=yes|no]      Enable clipboard sharing yes/no. Default: yes.
       --vcxsrv                   Use X server VcXsrv.
       --xwin                     Use X server XWin.
-      --display N                Display number N for new X server.
+      --display N                Use display number N for new X server.
       --no-auth                  Disable X cookie authentication. Discouraged.
       --cleanup                  Stop all X servers and delete cookies.
   -v, --verbose                  Be verbose.
@@ -60,7 +59,9 @@ Example to get a Wayland environment:
  - Run Weston with:              XDG_RUNTIME_DIR=/tmp  runx -- weston
 
 
-runx version $Version" >&2
+runx version $Version
+Please report issues at:  https://github.com/mviereck/runx
+" >&2
 }
 
 finish() {                      # Clean up and terminate
@@ -297,18 +298,27 @@ check_dependency() {            # Check for single command
 check_dependencies() {          # Check all dependencies
   local Line
   
+  # subsystem
   case "$Winsubsystem" in
     WSL|CYGWIN|MSYS2) ;;
     *) error "runx is designed to run on MS Windows in WSL, Cygwin or MSYS2.
   Did not detect WSL, Cygwin or MSYS2." ;; ###
   esac
+  [ "$Winsubsystem" = "MSYS2" ] && [ "$Xserver" = "xwin" ] && {
+    note "runx in MSYS2 does not support --xwin.
+  Fallback: Enabling option --vcxsrv."
+    Xserver="vcxsrv"
+  }
   
+  # xauth
   [ "$Xauthentication" = "yes" ] && {
     check_dependency xauth || error "Missing dependency: xauth
   Cannot create an authorization cookie for X server access.
   Please install package in $Winsubsystem:  xauth
   You can disable cookie authentication with discouraged option --no-auth."
   }
+  
+  # xwininfo
   [ "$Newdisplaynumber" ] || {
     check_dependency xwininfo || {
       Newdisplaynumber="$((RANDOM / 10))"
@@ -320,12 +330,15 @@ check_dependencies() {          # Check all dependencies
   $([ "$Winsubsystem" = "MSYS2" ] || echo "  Please install package in $Winsubsystem:  xwininfo  or  x11-utils" )"
     }
   }
+  
   # mcookie ### FIXME
   
+  # X server VcXsrv or XWin
   Vcxsrvexe="$(command -v vcxsrv.exe)"
   [ "$Vcxsrvexe" ] || Vcxsrvexe="$(command -v "$(convertpath --subsystem "C:/Program Files/VcXsrv/vcxsrv.exe")")"
   Xwinexe="$(command -v XWin)"
   [ -z "$Xwinexe" ] && [ "$Winsubsystem" = "WSL" ] && {
+    # search for XWin
     for Drive in /mnt/*; do
       Xwinexe="$(command -v "$Drive/cygwin64/bin/XWin.exe")"
       [ "$Xwinexe" ] && break
@@ -336,36 +349,33 @@ check_dependencies() {          # Check all dependencies
   verbose "Found X servers:
   $Vcxsrvexe
   $Xwinexe"
-
-  for Line in cmd.exe ipconfig.exe powershell.exe tasklist.exe taskkill.exe; do
-    check_dependency "$Line" || error "Did not find Windows command: $Line"
-  done
   
-  [ -z "$Xserver" ] && {
-    check_dependency "$Vcxsrvexe" && Xserver="vcxsrv"
-    check_dependency "$Xwinexe"   && Xserver="xwin"
-    [ "$Winsubsystem" = "MSYS2" ] && Xserver="vcxsrv"
-  }
+  [ -z "$Xserver" ] && [ -n "$Xwinexe" ]  && Xserver="xwin"
+  [ -z "$Xserver" ]                       && Xserver="vcxsrv"
+  [ "$Winsubsystem" = "MSYS2" ]           && Xserver="vcxsrv"
+  
   case "$Xserver" in
     vcxsrv) Xserverexe="$Vcxsrvexe" ;;
     xwin)   Xserverexe="$Xwinexe" ;;
   esac
   
-  check_dependency "${Xserverexe}" || { ### FIXME
+  [ -z "$Xserverexe" ] && {
     case $Winsubsystem in
-      WSL|CYGWIN) 
-        error "No X server found. 
+      WSL|CYGWIN) error "No X server found. 
   Please either install X server VcXsrv:
       https://sourceforge.net/projects/vcxsrv
   or install Cygwin with packages xinit, xauth and xwininfo to provide XWin:
       https://www.cygwin.com/" ;;
-      MSYS2)
-        [ "$Xserver" = "xwin" ] && error "runx in MSYS2 does not support --xwin."
-        error "X server $Xserver not found. Please install X server VcXsrv: 
-  https://sourceforge.net/projects/vcxsrv/"
-      ;;
+      MSYS2)      error "No X server found for MSYS2. 
+  Please install X server VcXsrv:
+      https://sourceforge.net/projects/vcxsrv" ;;
     esac
   }
+  
+  # Windows commands
+  for Line in cmd.exe ipconfig.exe powershell.exe tasklist.exe taskkill.exe; do
+    check_dependency "$Line" || error "Did not find Windows command: $Line"
+  done
 }
 
 check_displaynumber() {         # Find free display number, print on stdout
@@ -479,7 +489,7 @@ cleanup() {                     # --cleanup: Terminate X servers, delete cookies
 declare_variables() {
   # Default values
   Desktopmode="no"
-  Screensize="" ###
+  Screensize="" ### FIXME
   Shareclipboard="yes"
   Sharegpu="no"
   Verbose="no"
@@ -553,9 +563,7 @@ main() {
   [ "$Sourced" = "no" ] && note "Windows firewall settings can forbid application access
   to the X server. If no application window appears, but no obvious error
   is shown, please check your firewall settings. 
-  Compare:  https://github.com/mviereck/x11docker/issues/108
-  Another possible reason forma failing startup are broken cookies.
-  You can remove cookies and stop running X servers with: runx --cleanup"
+  Compare:   https://github.com/mviereck/x11docker/issues/108"
   
   # set DISPLAY and XAUTHORITY, output on stdout
   export DISPLAY=$Hostip:$Newdisplaynumber
@@ -563,15 +571,18 @@ main() {
     yes)
       export XAUTHORITY="$Xclientcookie"
       verbose "DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY"
+      note "If you get application error messages like 'Cannot open display'
+  or 'Invalid MIT-MAGIC-COOKIE', the X cookie might be broken.
+  You can remove old cookies and stop running X servers with: runx --cleanup"
       echo "DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY"
     ;;
     no)
       unset XAUTHORITY
       verbose "DISPLAY=$DISPLAY"
-      echo "DISPLAY=$DISPLAY"
       warning "Option --no-auth: Cookie authentication is disabled!
   Your X server $Xserver listens on TCP connections without any protection!
   This is a security leak. Please use option --no-auth for debugging only."
+      echo "DISPLAY=$DISPLAY"
     ;;
   esac
   

@@ -9,18 +9,17 @@ Syntax:
 Options:
   -h, --help                     Show this help.
   -d, --desktop                  Open a parent window for desktop environments.
-  -g, --gpu [=yes|no]            Enable GPU hardware acceleration. Default: no.
-                                 Can fail with NVIDIA cards. Works better with
-                                 XWin in Cygwin than with VcXsrv.
+  -g, --gpu                      Enable GPU hardware acceleration. Can fail 
+                                 with NVIDIA cards. Works best with XWin.
       --clipboard [=yes|no]      Enable clipboard sharing yes/no. Default: yes.
       --vcxsrv                   Use X server VcXsrv.
       --xwin                     Use X server XWin.
-      --display N                Display number N for new X server.
+      --display N                Use display number N for new X server.
       --no-auth                  Disable X cookie authentication. Discouraged.
       --cleanup                  Stop all X servers and delete cookies.
   -v, --verbose                  Be verbose.
 
-Installation of runx in WSL, MSYS2 or Cygwin:
+Installation of runx in Cygwin, MSYS2 or WSL:
  - Copy runx into /usr/local/bin/
  - Make runx executeable:        sudo chmod +x /usr/local/bin/runx
  - Install xauth and xwininfo:   sudo apt update
@@ -50,5 +49,9 @@ Example to directly run an application with runx:
 Example to run Mate desktop:
  - Install Mate desktop with:    sudo apt install mate-desktop-environment
  - Run Mate desktop with:        runx --desktop -- mate-session
+ 
+Example to get a Wayland environment:
+ - Install Wayland compositor:   sudo apt install weston
+ - Run Weston with:              XDG_RUNTIME_DIR=/tmp  runx -- weston
  ```
  
