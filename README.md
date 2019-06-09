@@ -1,8 +1,7 @@
 # runx
 `runx` allows to easily run Linux GUI applications on MS Windows.
  - `runx` starts an X server, either VcXsrv or XWin, to provide a graphical environment for Linux applications.
- - `runx` creates an authoriuation cookie to restrict access to the X server to allowed clients only.
- - `runx` runs the Linux applications with 
+ - `runx` creates an authorization cookie to restrict access to the X server to allowed clients only.
 
 ## Linux on MS Windows
 `runx` can run in:
@@ -12,7 +11,7 @@
 
 ## X server for graphical Linux applications
 `runx` needs an X server. Install on MS Windows one or both of:
- - [VcXsrv](https://sourceforge.net/projects/vcxsrv/) provides X server VcXsrv.
+ - [VcXsrv](https://sourceforge.net/projects/vcxsrv/) to provide X server VcXsrv.
  - [Cygwin](https://www.cygwin.com) with packages `xinit`, `xauth` and `xwininfo`. This provides X server XWin.
 
 ## Installation
@@ -42,6 +41,7 @@ for that reason, using `runix` in MSYS2 is possible, but discouraged.
    - In MSYS2 `runx` only supports X server VcXsrv, but not XWin.
  - Run the commands:
    ```
+   mkdir /usr/local/bin
    wget https://github.com/mviereck/runx/blob/master/runx -O /usr/local/bin/runx
    chmod +x /usr/local/bin/runx
    ```
@@ -67,6 +67,16 @@ for that reason, using `runix` in MSYS2 is possible, but discouraged.
      ```
      runx --desktop -- mate-session
      ```
+### Providing X server in background
+You can make an entry in the file `~/.bashrc` to have an X server always available.
+Possible entry in `~/.bashrc`:
+```
+source /usr/local/bin/runx
+```
+If future runs of the terminal you can directly run Linux GUI applications, e.g.:
+```
+pcmanfm
+```
 
 ## Output of `runx --help`
 ```
