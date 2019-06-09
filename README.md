@@ -1,4 +1,74 @@
 # runx
+`runx` allows to easily run Linux GUI applications on MS Windows.
+ - `runx` starts an X server, either VcXsrv or XWin, to provide a graphical environment for Linux applications.
+ - `runx` creates an authoriuation cookie to restrict access to the X server to allowed clients only.
+ - `runx` runs the Linux applications with 
+
+## Linux on MS Windows
+`runx` can run in:
+ - [WSL (Windows subsystem for Linux)](https://docs.microsoft.com/en-us/windows/wsl/about)
+ - [Cygwin](https://www.cygwin.com/) 
+ - [MSYS2](https://www.msys2.org/)
+
+## X server for graphical Linux applications
+`runx` needs an X server. Install on MS Windows one or both of:
+ - [VcXsrv](https://sourceforge.net/projects/vcxsrv/) provides X server VcXsrv.
+ - [Cygwin](https://www.cygwin.com) with packages `xinit`, `xauth` and `xwininfo`. This provides X server XWin.
+
+## Installation
+Installation in general:
+ - Copy `runx` into folder `/usr/local/bin` and make it executeable with `chmod +x /usr/local/bin/runx`.
+ - Install dependencies `xauth` and `xwininfo`.
+### Installation in WSL
+WSL runs per default Linux distribution Ubuntu. 
+ - Run the following commands in WSL terminal to install `runx` and its dependencies:
+   ```
+   sudo wget https://github.com/mviereck/runx/blob/master/runx -O /usr/local/bin/runx
+   sudo chmod +x /usr/local/bin/runx
+   sudo apt update
+   sudo apt install xauth x11-utils
+   ```
+### Installation in Cygwin
+ - Run the Cygwin installer and install packages `xinit`, `xwininfo`, `xauth` and `wget`.
+ - In Cygwin terminal, run the commands:
+   ```
+   wget https://github.com/mviereck/runx/blob/master/runx -O /usr/local/bin/runx
+   chmod +x /usr/local/bin/runx
+   ```
+### Installation in MSYS2
+ - Constraints in MSYS2: 
+   - MSYS2 does not provide `xauth` to create authentication cookies to restrict access to the X server.
+for that reason, using `runix` in MSYS2 is possible, but discouraged. 
+   - In MSYS2 `runx` only supports X server VcXsrv, but not XWin.
+ - Run the commands:
+   ```
+   wget https://github.com/mviereck/runx/blob/master/runx -O /usr/local/bin/runx
+   chmod +x /usr/local/bin/runx
+   ```
+
+## Usage examples
+ - File manager pcmanfm in WSL:
+   - Installation:
+     ```
+     sudo apt update
+     sudo apt install pcmanfm
+     ```
+   - Run:
+     ```
+     runx -- pcmanfm
+     ```
+ - Mate desktop environment in WSL:
+   - Installation:
+     ```
+     sudo apt update
+     sudo apt install mate-desktop-environment
+     ```
+   - Run:
+     ```
+     runx --desktop -- mate-session
+     ```
+
+## Output of `runx --help`
 ```
 runx - Provide an X server on MS Windows in Cygwin, MSYS2 or WSL.
 Run Linux GUI applications on MS Windows.
