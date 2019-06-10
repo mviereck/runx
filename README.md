@@ -1,26 +1,34 @@
 # runx
-`runx` allows to easily run Linux GUI applications on MS Windows.
+`runx` allows to easily run Linux GUI applications on MS Windows. 
+
+Background:
  - `runx` starts an X server, either VcXsrv or XWin, to provide a graphical environment for Linux applications.
  - `runx` creates an authorization cookie to restrict access to the X server to allowed clients only.
+ - `runx` runs the desired Linux GUI application with the credentials needed to access the X server.
 
-## Linux on MS Windows
+## Linux environments on MS Windows
 `runx` can run in:
  - [WSL](https://docs.microsoft.com/en-us/windows/wsl/about): Windows subsystem for Linux.
- - [Cygwin](https://www.cygwin.com/): Cygwin is a large collection of GNU and Open Source tools which provide functionality similar to a Linux distribution on Windows.
- - [MSYS2](https://www.msys2.org/): MSYS2 is a software distro and building platform for Windows.
+ - [Cygwin](https://www.cygwin.com/): Cygwin is a large collection of Open Source tools which provide functionality similar to a Linux distribution on Windows.
+ - [MSYS2](https://www.msys2.org/): MSYS2 is a software distro and building platform for Windows and serves as a base for [git for windows](https://gitforwindows.org/) and [MingW](http://www.mingw.org/). It is mainly used by developers.
+   
 
 ## X server for graphical Linux applications
 `runx` needs an X server. Install on MS Windows one or both of:
- - [VcXsrv](https://sourceforge.net/projects/vcxsrv/) to provide X server VcXsrv. (Easier to install than XWin.)
- - [Cygwin](https://www.cygwin.com) with packages `xinit`, `xauth` and `xwininfo`. This provides X server XWin. (Better `--gpu` support than VcXsrv.)
-   - `runx` will automatically use XWin if available. You can specify the desired X server with option `--xwin` or `--vcxsrv`. 
+ - [VcXsrv](https://sourceforge.net/projects/vcxsrv/) to provide X server *VcXsrv*. 
+   - Easier to install than XWin.
+ - [Cygwin](https://www.cygwin.com) with packages `xinit`, `xauth` and `xwininfo`. 
+   - This provides X server *XWin* for Cygwin and WSL.
+   - XWin has a better `--gpu` support than VcXsrv.
+ 
+`runx` will automatically use XWin if available. You can specify the desired X server with option `--xwin` or `--vcxsrv`. 
 
 ## Installation
 Installation in general:
  - Copy `runx` into folder `/usr/local/bin` and make it executeable with `chmod +x /usr/local/bin/runx`.
  - Install dependencies `xauth` and `xwininfo`.
 ### Installation in WSL
-WSL runs per default Linux distribution Ubuntu. 
+WSL runs by default Linux distribution Ubuntu. 
  - Run the following commands in WSL terminal to install `runx` and its dependencies:
    ```
    sudo wget https://github.com/mviereck/runx/blob/master/runx -O /usr/local/bin/runx
@@ -30,26 +38,26 @@ WSL runs per default Linux distribution Ubuntu.
    ```
 ### Installation in Cygwin
  - Run the Cygwin installer and install packages `xinit`, `xwininfo`, `xauth` and `wget`.
- - In Cygwin terminal, run the commands:
+ - In Cygwin terminal run the commands:
    ```
    wget https://github.com/mviereck/runx/blob/master/runx -O /usr/local/bin/runx
    chmod +x /usr/local/bin/runx
    ```
 ### Installation in MSYS2
- - Constraints in MSYS2: 
-   - MSYS2 does not provide `xauth` to create authentication cookies to restrict access to the X server.
-For that reason, using `runix` in MSYS2 is possible, but discouraged. 
-   - In MSYS2 `runx` only supports X server VcXsrv, but not XWin.
- - Run the commands:
+ - In MSYS2 terminal run the commands:
    ```
    mkdir /usr/local/bin
    wget https://github.com/mviereck/runx/blob/master/runx -O /usr/local/bin/runx
    chmod +x /usr/local/bin/runx
    ```
+ - Constraints in MSYS2: 
+   - MSYS2 does not provide `xauth` to create authentication cookies to restrict access to the X server.
+For that reason, using `runix` in MSYS2 is possible, but discouraged. 
+   - In MSYS2 `runx` only supports X server VcXsrv, but not XWin.
 
 ## GPU hardware acceleration
 `runx` supports GPU hardware accelerated graphics with option `--gpu`.
- - GPU access can cause issues with X server VcXsrv, especially with NVIDIA cards. For that reason, GPU usage is disabled by defalt in `runx`.
+ - GPU access can cause issues with X server VcXsrv, especially with NVIDIA cards. For that reason, GPU usage is disabled by default in `runx`.
  - If you encounter issues with option `--gpu`, try X server XWin instead of VcXsrv.
 
 ## Usage examples
@@ -73,6 +81,7 @@ For that reason, using `runix` in MSYS2 is possible, but discouraged.
      ```
      runx --desktop --gpu -- mate-session
      ```
+
 ### Providing X server in background
 You can make an entry in the file `~/.bashrc` to have an X server always available.
 Possible entry in `~/.bashrc`:
