@@ -57,7 +57,7 @@ For that reason, using `runix` in MSYS2 is possible, but discouraged.
 
 ## GPU hardware acceleration
 `runx` supports GPU hardware accelerated graphics with option `--gpu`.
- - GPU access can cause issues with X server *VcXsrv*, especially with NVIDIA cards. For that reason, GPU usage is disabled by default in `runx`.
+ - GPU access can cause issues with X server *VcXsrv*, especially with NVIDIA cards. For that reason GPU usage is disabled by default in `runx`.
  - If you encounter issues with option `--gpu`, try X server *XWin* instead of *VcXsrv*.
 
 ## Usage examples
@@ -102,17 +102,18 @@ Syntax:
   runx [OPTIONS]  --  [COMMAND]
 
 Options:
-  -h, --help                     Show this help.
-  -d, --desktop                  Open a parent window for desktop environments.
-  -g, --gpu                      Enable GPU hardware acceleration. Can fail 
-                                 with NVIDIA cards. Works best with XWin.
-      --clipboard [=yes|no]      Enable clipboard sharing yes/no. Default: yes.
-      --vcxsrv                   Use X server VcXsrv.
-      --xwin                     Use X server XWin.
-      --display N                Use display number N for new X server.
-      --no-auth                  Disable X cookie authentication. Discouraged.
-      --cleanup                  Stop all X servers and delete cookies.
-  -v, --verbose                  Be verbose.
+  -h, --help                   Show this help.
+  -d, --desktop                Open a parent window for desktop environments.
+  -g, --gpu                    Enable GPU hardware acceleration. Can fail 
+                               with NVIDIA cards. Works best with XWin.
+      --size WIDTHxHEIGHT      Window size for option --desktop, e.g. 800x600.
+      --clipboard [=yes|no]    Enable clipboard sharing yes/no. Default: yes.
+      --vcxsrv                 Use X server VcXsrv.
+      --xwin                   Use X server XWin.
+      --display N              Use display number N for new X server.
+      --no-auth                Disable X cookie authentication. Discouraged.
+      --cleanup                Stop all X servers and delete cookies.
+  -v, --verbose                Be verbose.
 
 Installation of runx in WSL:
  - Copy runx into /usr/local/bin/
