@@ -78,6 +78,7 @@ finish() {                      # Clean up and terminate
       unset -f check_host check_dependency check_dependencies check_displaynumber setup_cookie generate_xcommand
       unset -f cleanup
       unset -f declare_variables parse_options main
+      unset DISPLAY XAUTHORITY
       Exitcode="${1:-0}"
     ;;
     no)
@@ -423,7 +424,6 @@ $(xauth -v -f "$Xservercookie" list)"
 }
 
 generate_xcommand() {           # Generate command to start X server VcXsrv
-  
 
   Xcommand="$(escapestring "$Xserverexe") :$Newdisplaynumber -listen tcp -retro -lesspointer"
   
@@ -510,7 +510,6 @@ declare_variables() {
   # Empty global vars needed later
   Exitcode=""
   Hostip=""
-  Logfile=""
   Newdisplaynumber=""
   Sourced=""
   Vcxsrvexe=""
@@ -587,13 +586,10 @@ main() {
     ;;
   esac
   
-  # set up X log
-  Logfile="/tmp/runx_X${Newdisplaynumber}.log"
-  :> "$Logfile"
-  [ "$Verbose" = "yes" ] && {
-    tail -f "$Logfile" 1>&2 &
-  }
-  Xcommand="$Xcommand >> '$Logfile' 2>&1"
+  case "$Verbose" in
+    yes) Xcommand="$Xcommand 1>&2" ;;
+    no)  Xcommand="$Xcommand >/dev/null 2>&1" ;;
+  esac
   
   # Run X in background?
   { [ "$Hostcommand" ] || [ "$Sourced" = "yes" ] ; }  && Xcommand="$Xcommand & RUNX_XPID=\$!"
@@ -607,12 +603,13 @@ main() {
   $(ps -p "$RUNX_XPID")"
     case "$Xserver" in
       xwin)
-        for Waiting in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+        for Waiting in 1 2 3 4 5 6 7 8 9 10; do
+          [ -e "$(dirname "$Xwinexe")/../../tmp/.X11-unix/X$Newdisplaynumber" ] && break
+          [ -e "$(dirname "$Xwinexe")/../tmp/.X11-unix/X$Newdisplaynumber" ] && break
           sleep 1
-#          grep -q "successfully opened the display" "$Logfile" && break
-          grep -q "Windows keyboard layout" "$Logfile" && break
+          verbose "Waiting since ${Waiting}s for XWin to be ready."
         done
-        [ "$Waiting" = "20" ] && error "X server XWin not ready after 20s."
+        [ "$Waiting" = "10" ] && error "X server XWin not ready after 10s."
       ;;
       vcxsrv) sleep 1 ;;
     esac
