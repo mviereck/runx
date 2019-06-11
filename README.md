@@ -1,10 +1,14 @@
 # runx
-`runx` allows to easily run Linux GUI applications on MS Windows. 
+`runx` allows to easily run Linux GUI applications on MS Windows.
+
+This is especially of interest for [WSL](https://docs.microsoft.com/en-us/windows/wsl/about) in Windows 10 that does not support graphical applications on itself.
 
 Background:
  - `runx` starts an X server, either *VcXsrv* or *XWin*, to provide a graphical environment for Linux applications.
  - `runx` creates an authorization cookie to restrict access to the X server to allowed clients only.
  - `runx` runs the desired Linux GUI application with the credentials needed to access the X server.
+ 
+For similar functionality on native Linux systems use [x11docker](https://github.com/mviereck/x11docker) with options '--exe' or `--xonly'.
 
 ## Linux environments on MS Windows
 `runx` can run in:
@@ -107,9 +111,9 @@ Options:
   -g, --gpu                    Enable GPU hardware acceleration. Can fail 
                                with NVIDIA cards. Works best with XWin.
       --size WIDTHxHEIGHT      Window size for option --desktop, e.g. 800x600.
-      --clipboard [=yes|no]    Enable clipboard sharing yes/no. Default: yes.
       --vcxsrv                 Use X server VcXsrv.
       --xwin                   Use X server XWin.
+      --clipboard [=yes|no]    Enable clipboard sharing yes/no. Default: yes.
       --display N              Use display number N for new X server.
       --no-auth                Disable X cookie authentication. Discouraged.
       --cleanup                Stop all X servers and delete cookies.
