@@ -10,6 +10,19 @@
  
 For similar functionality on native Linux systems use [x11docker](https://github.com/mviereck/x11docker) with options `--exe` or `--xonly`.
 
+## Table of contents
+ - [Linux environments on MS Windows](#linux-environments-on-ms-windows)
+ - [X server for graphical Linux applications](#x-server-for-graphical-linux-applications)
+ - [Installation](#installation)
+   - [Installation in WSL](#installation-in-wsl)
+   - [Installation in Cygwin](#installation-in-cygwin)
+   - [Installation in MSYS2](#installation-in-msys2)
+ - [GPU hardware acceleration](#gpu-hardware-acceleration)
+ - [Usage examples](#Usage-examples)
+   - [Providing X server in background](#providing-x-server-in-background)
+ - [Output of `runx --help`](#output-of-runx---help)
+ - [Screenshot](#screenshot)
+
 ## Linux environments on MS Windows
 `runx` can run in:
  - [WSL](https://docs.microsoft.com/en-us/windows/wsl/about): Windows subsystem for Linux.
