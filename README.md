@@ -12,8 +12,8 @@ For similar functionality on native Linux systems use [x11docker](https://github
 
 ## Table of contents
  - [Linux environments on MS Windows](#linux-environments-on-ms-windows)
- - [X server for graphical Linux applications](#x-server-for-graphical-linux-applications)
  - [Installation](#installation)
+   - [Installation of X server](#installation-of-x-server)
    - [Installation in WSL](#installation-in-wsl)
    - [Installation in Cygwin](#installation-in-cygwin)
    - [Installation in MSYS2](#installation-in-msys2)
@@ -30,8 +30,14 @@ For similar functionality on native Linux systems use [x11docker](https://github
  - [MSYS2](https://www.msys2.org/): MSYS2 is a software distro and building platform for Windows and serves as a base for [git for windows](https://gitforwindows.org/) and [MingW](http://www.mingw.org/). It is mainly used by developers.
    
 
-## X server for graphical Linux applications
-`runx` needs an X server. Install on MS Windows one or both of:
+## Installation
+Installation in general:
+ - Install an X server, VcXsrv or XWin.
+ - Copy `runx` into folder `/usr/local/bin` and make it executeable with `chmod +x /usr/local/bin/runx`.
+ - Install dependencies `xauth` and `xwininfo`.
+ 
+### Installation of X server
+`runx` needs an [X server](https://en.wikipedia.org/wiki/X_Window_System). Install on MS Windows one or both of:
  - [VcXsrv](https://sourceforge.net/projects/vcxsrv/) to provide X server *VcXsrv*. 
    - Easier to install than *XWin*.
  - [Cygwin](https://www.cygwin.com) with packages `xinit`, `xauth` and `xwininfo`. 
@@ -40,19 +46,15 @@ For similar functionality on native Linux systems use [x11docker](https://github
  
 `runx` will automatically use *XWin* if available. You can specify the desired X server with options `--xwin` or `--vcxsrv`. 
 
-## Installation
-Installation in general:
- - Copy `runx` into folder `/usr/local/bin` and make it executeable with `chmod +x /usr/local/bin/runx`.
- - Install dependencies `xauth` and `xwininfo`.
 ### Installation in WSL
-WSL runs by default Linux distribution Ubuntu. 
- - Run the following commands in WSL terminal to install `runx` and its dependencies:
+ - Run the following commands in WSL/Ubuntu terminal to install `runx` and its dependencies:
    ```
    sudo wget https://github.com/mviereck/runx/blob/master/runx -O /usr/local/bin/runx
    sudo chmod +x /usr/local/bin/runx
    sudo apt update
    sudo apt install xauth x11-utils
    ```
+   
 ### Installation in Cygwin
  - Run the Cygwin installer and install packages `xinit`, `xwininfo`, `xauth` and `wget`.
  - In Cygwin terminal run the commands:
@@ -60,6 +62,7 @@ WSL runs by default Linux distribution Ubuntu.
    wget https://github.com/mviereck/runx/blob/master/runx -O /usr/local/bin/runx
    chmod +x /usr/local/bin/runx
    ```
+   
 ### Installation in MSYS2
  - In MSYS2 terminal run the commands:
    ```
