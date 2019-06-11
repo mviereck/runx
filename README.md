@@ -157,3 +157,7 @@ Providing an X server in background all the time:
    E.g. just type:  'pcmanfm'  instead of 'runx -- pcmanfm'.
  ```
  
+ ## Screenshot
+ `runx` running Mate desktop on MS Windows:
+ ![Mate Desktop on MS Windows](https://raw.githubusercontent.com/mviereck/x11docker/screenshots/screenshot-runx.png)
+ 
