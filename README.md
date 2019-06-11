@@ -1,9 +1,9 @@
 # runx
 `runx` allows to easily run Linux GUI applications on MS Windows.
 
-This is especially of interest for [WSL](https://docs.microsoft.com/en-us/windows/wsl/about) in Windows 10 that does not support graphical applications on itself.
+ - This is especially of interest for [WSL](https://docs.microsoft.com/en-us/windows/wsl/about) in Windows 10 that does not support graphical applications on itself.
 
-Background:
+*Background*:
  - `runx` starts an X server, either *VcXsrv* or *XWin*, to provide a graphical environment for Linux applications.
  - `runx` creates an authorization cookie to restrict access to the X server to allowed clients only.
  - `runx` runs the desired Linux GUI application with the credentials needed to access the X server.
