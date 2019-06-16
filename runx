@@ -1,11 +1,11 @@
 #! /bin/bash
-# runx: Provide an X server in WSL
+# runx: Provide an X server in Cygwin, MSYS2 or WSL.
 
-Version="v0.2.3"
+Version="v0.2.4"
 
 usage() {                       # Usage information (--help)
-  echo "runx - Provide an X server on MS Windows in Cygwin, MSYS2 or WSL.
-Run Linux GUI applications on MS Windows.
+  echo "runx - Run Linux GUI applications on MS Windows.
+Provides an X server on MS Windows in Cygwin, MSYS2 or WSL.
 
 Syntax:
   runx [OPTIONS]  --  [COMMAND]
@@ -16,9 +16,9 @@ Options:
   -g, --gpu                    Enable GPU hardware acceleration. Can fail 
                                with NVIDIA cards. Works best with XWin.
       --size WIDTHxHEIGHT      Window size for option --desktop, e.g. 800x600.
-      --clipboard [=yes|no]    Enable clipboard sharing yes/no. Default: yes.
       --vcxsrv                 Use X server VcXsrv.
       --xwin                   Use X server XWin.
+      --clipboard [=yes|no]    Enable clipboard sharing yes/no. Default: yes.
       --display N              Use display number N for new X server.
       --no-auth                Disable X cookie authentication. Discouraged.
       --cleanup                Stop all X servers and delete cookies.
@@ -62,15 +62,12 @@ Providing an X server in background all the time:
    E.g. just type:  'pcmanfm'  instead of 'runx -- pcmanfm'.
 
 runx version $Version
-Please report issues at:         https://github.com/mviereck/runx
+Please report issues and get help at:   https://github.com/mviereck/runx
 " >&2
 }
 
 finish() {                      # Clean up and terminate
-  [ "$RUNX_XPID" ] && ps -p "$RUNX_XPID" >/dev/null 2>&1 && {
-    verbose "Terminating X server $RUNX_XPID"
-    kill "$RUNX_XPID"
-  }
+  verbose "Exitcode: ${1:-0}"
   case "$Sourced" in
     yes)
       unset -f usage finish
@@ -79,10 +76,17 @@ finish() {                      # Clean up and terminate
       unset -f check_host check_dependency check_dependencies check_displaynumber setup_cookie generate_xcommand
       unset -f cleanup
       unset -f declare_variables parse_options main
-      unset DISPLAY XAUTHORITY
-      Exitcode="${1:-0}"
+      
+      unset Desktopmode Screensize Shareclipboard Sharegpu Verbose Xauthentication
+      unset Esc Colblue Colyellow Colgreen Colgreenbg Colred Colredbg Coluline Colnorm
+
+      unset Exitcode Hostip Newdisplaynumber Sourced Vcxsrvexe Winsubmount Winsubpath Xcommand Xready Xserver Xserverexe Xserverpid Xwinexe
     ;;
     no)
+      [ "$Xserverpid" ] && ps -p "$Xserverpid" >/dev/null 2>&1 && {
+        verbose "Terminating X server $Xserverpid"
+        kill "$Xserverpid"
+      }
       exit "${1:-0}"
     ;;
   esac
@@ -92,20 +96,24 @@ error() {                       # Show error message and exit
   echo -e "${Colredbg}runx ERROR:${Colnorm} $*
 " >&2
   Exitcode=1
+  return 0
 }
 
 warning() {                     # Show warning messages
   echo "${Colyellow}runx WARNING:${Colnorm} $*
 " >&2
+  return 0
 }
 
 note() {                        # Show notice messages
   echo "${Colgreen}runx note:${Colnorm} $*
 " >&2
+  return 0
 }
 
 verbose() {                     # Show verbose message (--verbose)
   [ "$Verbose" = "yes" ] && note "$*"
+  return 0
 }
 
 #### general routines
@@ -277,7 +285,7 @@ check_host() {                  # Check host environment
   # Check IP of Windows host
   Hostip="$(ipconfig.exe | rmcr | grep -A6 'DockerNAT' | grep 'IPv4' | rev | cut -d' ' -f1 | rev)"
   [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr | grep 'IPv4' | grep -o '[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*' | grep "^10\.0\.*" )"
-  [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr | grep 'IPv4' | head -n1 | | rev | cut -d' ' -f1 | rev)"
+  [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr | grep 'IPv4' | head -n1 | rev | cut -d' ' -f1 | rev)"
   verbose "Host IP adress: $Hostip"
   
   [ "$Xauthentication" = "yes" ] && [ "$Winsubsystem" = "MSYS2" ] && {
@@ -434,7 +442,7 @@ generate_xcommand() {           # Generate command to start X server VcXsrv
       [ "$Xserver" = "vcxsrv" ] && note "GPU support of VcXsrv has some issues.
   If it does not work or crashes, try runx with option --xwin instead."
     ;;
-    no)  Xcommand="$Xcommand -nowgl -iglx" ; unset  LIBGL_ALWAYS_INDIRECT   ;;
+    no)  Xcommand="$Xcommand -nowgl -iglx" ; unset  LIBGL_ALWAYS_INDIRECT ; export LIBGL_ALWAYS_INDIRECT ;;
   esac
   
   # Seamless or desktop mode
@@ -520,8 +528,10 @@ declare_variables() {
   Winsubmount=""
   Winsubpath=""
   Xcommand=""
+  Xready=""
   Xserver=""
   Xserverexe=""
+  Xserverpid=""
   Xwinexe=""
 }
 
@@ -598,31 +608,29 @@ main() {
   esac
   
   # Run X in background?
-  { [ "$Hostcommand" ] || [ "$Sourced" = "yes" ] ; }  && Xcommand="$Xcommand & RUNX_XPID=\$!"
+  { [ "$Hostcommand" ] || [ "$Sourced" = "yes" ] ; }  && Xcommand="$Xcommand & Xserverpid=\$!"
 
+  # Run X server
   eval $Xcommand 
   
   # Check for successfull startup
-  [ "$RUNX_XPID" ] && {
-    export RUNX_XPID
-    verbose "PID of X server: $RUNX_XPID
-  $(ps -p "$RUNX_XPID")"
+  [ "$Xserverpid" ] && {
+    verbose "PID of X server: $Xserverpid
+  $(ps -p "$Xserverpid")"
     case "$Xserver" in
       xwin)
         for Waiting in 1 2 3 4 5 6 7 8 9 10; do
-          [ -e "$(dirname "$Xwinexe")/../../tmp/.X11-unix/X$Newdisplaynumber" ] && break
-          [ -e "$(dirname "$Xwinexe")/../tmp/.X11-unix/X$Newdisplaynumber" ] && break
+          [ -e "$(dirname "$Xwinexe")/../../tmp/.X11-unix/X$Newdisplaynumber" ] && Xready="yes"
+          [ -e "$(dirname "$Xwinexe")/../tmp/.X11-unix/X$Newdisplaynumber" ]    && Xready="yes"
+          [ "$Xready" ] && break
           sleep 1
           verbose "Waiting since ${Waiting}s for XWin to be ready."
         done
-        [ "$Waiting" = "10" ] && error "X server XWin not ready after 10s."
+        [ "$Xready" ] && verbose "X server XWin ready after ${Waiting}s." || error "X server XWin not ready after  ${Waiting}s."
       ;;
       vcxsrv) sleep 1 ;;
     esac
-  } || unset RUNX_XPID
-  
-  [ "$Sourced" = "yes" ]     && export RUNX_SOURCED=1 || unset RUNX_SOURCED
-  [ "$Desktopmode" = "yes" ] && export RUNX_DESKTOP=1 || unset RUNX_DESKTOP
+  }
   
   # Run host command
   [ -z "$Exitcode" ] && [ "$Hostcommand" ] && {

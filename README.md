@@ -1,5 +1,5 @@
-# runx
-`runx` allows to easily run Linux GUI applications and desktops on MS Windows.
+# runx - Run Linux GUI applications on MS Windows
+`runx` allows to easily run Linux GUI applications and desktops on MS Windows in Cygwin, MSYS2 or WSL.
 
  - This is especially of interest for [WSL](https://docs.microsoft.com/en-us/windows/wsl/about) in Windows 10 that does not support graphical applications on itself.
 
@@ -108,15 +108,15 @@ Possible entry in `~/.bashrc`:
 ```
 source /usr/local/bin/runx
 ```
-If future runs of the terminal you can directly run Linux GUI applications, e.g.:
+In future runs of the terminal you can directly run Linux GUI applications, e.g.:
 ```
 pcmanfm
 ```
 
 ## Output of `runx --help`
 ```
-runx - Provide an X server on MS Windows in Cygwin, MSYS2 or WSL.
-Run Linux GUI applications on MS Windows.
+runx - Run Linux GUI applications on MS Windows.
+Provides an X server on MS Windows in Cygwin, MSYS2 or WSL.
 
 Syntax:
   runx [OPTIONS]  --  [COMMAND]
