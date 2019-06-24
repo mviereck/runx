@@ -32,15 +32,15 @@ For similar functionality on native Linux systems use [x11docker](https://github
 
 ## Installation
 Installation in general:
- - Install an X server, VcXsrv or XWin.
+ - Install an X server, *VcXsrv* or *XWin*.
  - Copy `runx` into folder `/usr/local/bin` and make it executeable with `chmod +x /usr/local/bin/runx`.
- - Install dependencies `xauth` and `xwininfo`.
+ - Install dependency `xauth`.
  
 ### Installation of X server
 `runx` needs an [X server](https://en.wikipedia.org/wiki/X_Window_System). Install on MS Windows one or both of:
  - [VcXsrv](https://sourceforge.net/projects/vcxsrv/) to provide X server *VcXsrv*. 
    - Easier to install than *XWin*.
- - [Cygwin](https://www.cygwin.com) with packages `xinit`, `xauth` and `xwininfo`. 
+ - [Cygwin](https://www.cygwin.com) with packages `xinit` and `xauth`. 
    - This provides X server *XWin* for Cygwin and WSL.
    - *XWin* has a better `--gpu` support than *VcXsrv*.
  
@@ -56,7 +56,7 @@ Installation in general:
    ```
    
 ### Installation in Cygwin
- - Run the Cygwin installer and install packages `xinit`, `xwininfo`, `xauth` and `wget`.
+ - Run the Cygwin installer and install packages `xinit`, `xauth` and `wget`.
  - In Cygwin terminal run the commands:
    ```
    wget https://raw.githubusercontent.com/mviereck/runx/master/runx -O /usr/local/bin/runx
@@ -131,6 +131,7 @@ Options:
       --xwin                   Use X server XWin.
       --clipboard [=yes|no]    Enable clipboard sharing yes/no. Default: yes.
       --display N              Use display number N for new X server.
+                               Default: random number in range of 0 ... 3276.
       --no-auth                Disable X cookie authentication. Discouraged.
       --cleanup                Stop all X servers and delete cookies.
   -v, --verbose                Be verbose.
@@ -138,14 +139,14 @@ Options:
 Installation of runx in WSL:
  - Copy runx into /usr/local/bin/
  - Make runx executeable:        sudo chmod +x /usr/local/bin/runx
- - Install xauth and xwininfo:   sudo apt update
-                                 sudo apt install xauth x11-utils
+ - Install xauth:                sudo apt update
+                                 sudo apt install xauth
  
 Install an X server on Windows:
   runx supports two X servers: VcXsrv and XWin. Install at least one of them.
    - VcXsrv: Download and install from: 
        https://sourceforge.net/projects/vcxsrv/
-   - XWin: Download and install Cygwin64 with packages: xinit xauth xwininfo
+   - XWin: Download and install Cygwin64 with packages: xinit xauth
        https://www.cygwin.com
 VcXsrv is easier to install. XWin provides a better GPU support.
 

@@ -554,8 +554,8 @@ main() {
 
   [ "$Newdisplaynumber" ] || {
     Newdisplaynumber="$((RANDOM / 10))"
-    note "Using random display number :$Newdisplaynumber.
-  If this display number is already in use, start of runx will fail.
+    note "Using random X display number :$Newdisplaynumber.
+  If this display number is already in use, X server startup  will fail.
   You can specify a display number N with option '--display N'."
   }
   
