@@ -1,7 +1,7 @@
 #! /bin/bash
 # runx: Provide an X server in Cygwin, MSYS2 or WSL.
 
-Version="v0.2.6"
+Version="v0.2.7"
 
 usage() {                       # Usage information (--help)
   echo "runx - Run Linux GUI applications on MS Windows.
@@ -20,7 +20,7 @@ Options:
       --xwin                   Use X server XWin.
       --clipboard [=yes|no]    Enable clipboard sharing yes/no. Default: yes.
       --display N              Use display number N for new X server.
-                               Default: random number in range of 0 ... 3276.
+                               Default: random number in range of 100...3376.
       --no-auth                Disable X cookie authentication. Discouraged.
       --cleanup                Stop all X servers and delete cookies.
   -v, --verbose                Be verbose.
@@ -81,12 +81,17 @@ finish() {                      # Clean up and terminate
       unset Desktopmode Screensize Shareclipboard Sharegpu Verbose Xauthentication
       unset Esc Colblue Colyellow Colgreen Colgreenbg Colred Colredbg Coluline Colnorm
 
-      unset Exitcode Hostip Newdisplaynumber Sourced Vcxsrvexe Winsubmount Winsubpath Xcommand Xready Xserver Xserverexe Xserverpid Xwinexe
+      unset Exitcode Hostip Newdisplaynumber Sourced Vcxsrvexe Xserverwinpid Winsubmount Winsubpath Xcommand Xready Xserver Xserverexe Xserverpid Xwinexe
     ;;
     no)
       [ "$Xserverpid" ] && ps -p "$Xserverpid" >/dev/null 2>&1 && {
-        verbose "Terminating X server $Xserverpid"
+        verbose "Terminating X server $Xserver :$Newdisplaynumber. Linux PID: $Xserverpid"
         kill "$Xserverpid"
+        wait "$Xserverpid" 2>/dev/null
+      }
+      [ "$Xserverwinpid" ] && tasklist.exe /FI "PID eq $Xserverwinpid" | grep -q "$Xserverwinpid" && {
+        verbose "Terminating X server $Xserver :$Newdisplaynumber. Windows PID: $Xserverwinpid"
+        taskkill.exe /F /PID $Xserverwinpid 2>&1
       }
       exit "${1:-0}"
     ;;
@@ -505,6 +510,7 @@ declare_variables() {
   Newdisplaynumber=""
   Sourced=""
   Vcxsrvexe=""
+  Xserverwinpid=""
   Winsubmount=""
   Winsubpath=""
   Xcommand=""
@@ -550,10 +556,11 @@ parse_options() {
 }
 
 main() {
-  local Waiting
+  local Waiting Tasklistold Tasklistnew
 
   [ "$Newdisplaynumber" ] || {
     Newdisplaynumber="$((RANDOM / 10))"
+    Newdisplaynumber="$((Newdisplaynumber + 100))"
     note "Using random X display number :$Newdisplaynumber.
   If this display number is already in use, X server startup  will fail.
   You can specify a display number N with option '--display N'."
@@ -595,13 +602,24 @@ main() {
   
   # Run X in background?
   { [ "$Hostcommand" ] || [ "$Sourced" = "yes" ] ; }  && Xcommand="$Xcommand & Xserverpid=\$!"
+  
+  # Store Windows PID list
+  [ "$Winsubsystem" = "WSL" ] && Tasklistold="$(tasklist.exe | rmcr | grep -i ${Xserver}.exe | awk '{print $2}')"
 
   # Run X server
   eval $Xcommand 
+
+  # Find Windows PID of X server
+  [ "$Winsubsystem" = "WSL" ] && {
+    Tasklistnew="$(tasklist.exe | rmcr | grep -i ${Xserver}.exe | awk '{print $2}')"
+    Xserverwinpid="$(echo "$Tasklistold
+$Tasklistnew" | sort | uniq -u | sed '/^$/d')"
+    verbose "Windows PID of X server: $Xserverwinpid"
+  }
   
   # Check for successfull startup
   [ "$Xserverpid" ] && {
-    verbose "PID of X server: $Xserverpid
+    verbose "Linux PID of X server: $Xserverpid
   $(ps -p "$Xserverpid")"
     case "$Xserver" in
       xwin)
@@ -626,6 +644,7 @@ main() {
   }
 }
 
+trap finish EXIT
 declare_variables
 parse_options "$@"
 check_host

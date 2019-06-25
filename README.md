@@ -52,7 +52,7 @@ Installation in general:
    sudo wget https://raw.githubusercontent.com/mviereck/runx/master/runx -O /usr/local/bin/runx
    sudo chmod +x /usr/local/bin/runx
    sudo apt update
-   sudo apt install xauth x11-utils
+   sudo apt install xauth
    ```
    
 ### Installation in Cygwin
@@ -131,7 +131,7 @@ Options:
       --xwin                   Use X server XWin.
       --clipboard [=yes|no]    Enable clipboard sharing yes/no. Default: yes.
       --display N              Use display number N for new X server.
-                               Default: random number in range of 0 ... 3276.
+                               Default: random number in range of 100...3376.
       --no-auth                Disable X cookie authentication. Discouraged.
       --cleanup                Stop all X servers and delete cookies.
   -v, --verbose                Be verbose.
