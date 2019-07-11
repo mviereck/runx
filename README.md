@@ -72,7 +72,7 @@ Installation in general:
    ```
  - Constraints in MSYS2: 
    - MSYS2 does not provide `xauth` to create authentication cookies to restrict access to the X server.
-For that reason, using `runix` in MSYS2 is possible, but discouraged. 
+For that reason, using `runix` in MSYS2 is possible, but discouraged. You need option `--no-auth`.
    - In MSYS2 `runx` only supports X server *VcXsrv*, but not *XWin*.
 
 ## GPU hardware acceleration
