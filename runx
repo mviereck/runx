@@ -230,13 +230,16 @@ convertpath() {                 # Convert unix and windows pathes
   # change C to c
   Drive="${Drive,}"
 
-  [ "$Winsubsystem" = "WSL" ] && [ -z "$Drive" ] && case $Mode in
-    --windows|--unix|--volume)
-      warning "Request of Windows path to path within WSL:
+  case $Winsubsystem in
+    WSL1|WSL2)
+      [ -z "$Drive" ] && case $Mode in
+        --windows|--unix|--volume)
+          warning "Request of Windows path to path within WSL:
   $Path
   Write access from Windows host to WSL files can damage WSL.
   Read-only access is ok."
-    ;;
+      ;;
+    esac
   esac
 
   case $Drive in
@@ -273,7 +276,8 @@ check_host() {                  # Check host environment
     cygcheck.exe -V | rmcr | grep -q "(cygwin)"   && Winsubsystem="CYGWIN"
     cygcheck.exe -V | rmcr | grep -q "(msys)"     && Winsubsystem="MSYS2"
   }
-  uname -r | grep -q -i Microsoft                 && Winsubsystem="WSL"
+  uname -r | grep -q Microsoft                    && Winsubsystem="WSL1"
+  uname -r | grep -q microsoft                    && Winsubsystem="WSL2"
   
   [ "$0" = "$BASH_SOURCE" ] && Sourced="no" || Sourced="yes"
   verbose "Script is being sourced yes/no: $Sourced"
@@ -282,8 +286,12 @@ check_host() {                  # Check host environment
     MSYS2|CYGWIN) 
       Winsubmount="$(cygpath.exe -u "c:/" | rmcr | sed s%/c/%%)"
       Winsubpath="$(convertpath --unix "$(cygpath.exe -w "/" | rmcr)" )" ;;
-    WSL)          
+    WSL1)
       Winsubmount="/mnt"
+      grep -q "Windows" <<< "${PATH:-}" || export PATH="${PATH:-}:$Winsubmount/c/Windows/System32:$Winsubmount/c/Windows/System32/WindowsPowerShell/v1.0" # can miss after sudo
+      Winsubpath="$(convertpath --unix "$(getwslpath)")" ;;
+    WSL2)
+      Winsubmount=""
       grep -q "Windows" <<< "${PATH:-}" || export PATH="${PATH:-}:$Winsubmount/c/Windows/System32:$Winsubmount/c/Windows/System32/WindowsPowerShell/v1.0" # can miss after sudo
       Winsubpath="$(convertpath --unix "$(getwslpath)")" ;;
   esac
@@ -311,7 +319,7 @@ check_dependencies() {          # Check all dependencies
   
   # subsystem
   case "$Winsubsystem" in
-    WSL|CYGWIN|MSYS2) ;;
+    WSL1|WSL2|CYGWIN|MSYS2) ;;
     *) error "runx is designed to run on MS Windows in WSL, Cygwin or MSYS2.
   Did not detect WSL, Cygwin or MSYS2." ;; ###
   esac
@@ -325,7 +333,7 @@ check_dependencies() {          # Check all dependencies
   [ "$Xauthentication" = "yes" ] && {
     check_dependency xauth || {
       case $Winsubsystem in
-        WSL|CYGWIN) error "Missing dependency: xauth
+        WSL1|WSL2|CYGWIN) error "Missing dependency: xauth
   Cannot create an authorization cookie for X server access.
   Please install package 'xauth'.
   You can disable cookie authentication with discouraged option --no-auth." ;;
@@ -341,15 +349,17 @@ check_dependencies() {          # Check all dependencies
   Vcxsrvexe="$(command -v vcxsrv.exe)"
   [ "$Vcxsrvexe" ] || Vcxsrvexe="$(command -v "$(convertpath --subsystem "C:/Program Files/VcXsrv/vcxsrv.exe")")"
   Xwinexe="$(command -v XWin)"
-  [ -z "$Xwinexe" ] && [ "$Winsubsystem" = "WSL" ] && {
-    # search for XWin
-    for Drive in /mnt/*; do
-      Xwinexe="$(command -v "$Drive/cygwin64/bin/XWin.exe")"
-      [ "$Xwinexe" ] && break
-      Xwinexe="$(command -v "$Drive/cygwin32/bin/XWin.exe")"
-      [ "$Xwinexe" ] && break
-    done
-  }
+  [ -z "$Xwinexe" ] && case $Winsubsystem in
+    WSL1|WSL2)
+      # search for XWin
+      for Drive in $Winsubmount/*; do
+        Xwinexe="$(command -v "$Drive/cygwin64/bin/XWin.exe")"
+        [ "$Xwinexe" ] && break
+        Xwinexe="$(command -v "$Drive/cygwin32/bin/XWin.exe")"
+        [ "$Xwinexe" ] && break
+      done
+    ;;
+  esac
   verbose "Found X servers:
   $Vcxsrvexe
   $Xwinexe"
@@ -365,7 +375,7 @@ check_dependencies() {          # Check all dependencies
   
   [ -z "$Xserverexe" ] && {
     case $Winsubsystem in
-      WSL|CYGWIN) error "No X server found. 
+      WSL1|WSL2|CYGWIN) error "No X server found. 
   Please either install X server VcXsrv:
       https://sourceforge.net/projects/vcxsrv
   or install Cygwin with packages xinit and xauth to provide XWin:
@@ -446,12 +456,12 @@ generate_xcommand() {           # Generate command to start X server VcXsrv
     yes) 
       case "$Xserver" in
         xwin) case "$Winsubsystem" in
-                CYGWIN)   Xcommand="$Xcommand -auth '$Xservercookie'" ;;
-                WSL)      Xcommand="$Xcommand -auth '/cygdrive${Xservercookie#$Winsubmount}'" ;;
+                CYGWIN)    Xcommand="$Xcommand -auth '$Xservercookie'" ;;
+                WSL1|WSL2) Xcommand="$Xcommand -auth '/cygdrive${Xservercookie#$Winsubmount}'" ;;
               esac ;;
-        vcxsrv)           Xcommand="$Xcommand -auth '$(convertpath --windows "$Xservercookie")'" ;;
+        vcxsrv)            Xcommand="$Xcommand -auth '$(convertpath --windows "$Xservercookie")'" ;;
       esac ;;
-    no)                   Xcommand="$Xcommand -ac" ;;
+    no)                    Xcommand="$Xcommand -ac" ;;
   esac
   
   # X server extensions
@@ -606,18 +616,22 @@ main() {
   { [ "$Hostcommand" ] || [ "$Sourced" = "yes" ] ; }  && Xcommand="$Xcommand & Xserverpid=\$!"
   
   # Store Windows PID list
-  [ "$Winsubsystem" = "WSL" ] && Tasklistold="$(tasklist.exe | rmcr | grep -i ${Xserver}.exe | awk '{print $2}')"
+  case $Winsubsystem in
+    WSL1|WSL2) Tasklistold="$(tasklist.exe | rmcr | grep -i ${Xserver}.exe | awk '{print $2}')" ;;
+  esac
 
   # Run X server
   eval $Xcommand 
 
   # Find Windows PID of X server
-  [ "$Winsubsystem" = "WSL" ] && {
-    Tasklistnew="$(tasklist.exe | rmcr | grep -i ${Xserver}.exe | awk '{print $2}')"
-    Xserverwinpid="$(echo "$Tasklistold
+  case $Winsubsystem in
+    WSL1|WSL2) 
+      Tasklistnew="$(tasklist.exe | rmcr | grep -i ${Xserver}.exe | awk '{print $2}')"
+      Xserverwinpid="$(echo "$Tasklistold
 $Tasklistnew" | sort | uniq -u | sed '/^$/d')"
-    verbose "Windows PID of X server: $Xserverwinpid"
-  }
+      verbose "Windows PID of X server: $Xserverwinpid"
+    ;;
+  esac
   
   # Check for successfull startup
   [ "$Xserverpid" ] && {
