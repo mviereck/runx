@@ -273,7 +273,7 @@ check_host() {                  # Check host environment
     cygcheck.exe -V | rmcr | grep -q "(cygwin)"   && Winsubsystem="CYGWIN"
     cygcheck.exe -V | rmcr | grep -q "(msys)"     && Winsubsystem="MSYS2"
   }
-  uname -r | grep -q Microsoft                    && Winsubsystem="WSL"
+  uname -r | grep -q -i Microsoft                 && Winsubsystem="WSL"
   
   [ "$0" = "$BASH_SOURCE" ] && Sourced="no" || Sourced="yes"
   verbose "Script is being sourced yes/no: $Sourced"
@@ -386,7 +386,7 @@ setup_cookie() {                # Generate X authentication cookie
   local Cookie
   
   Xclientcookie="$(convertpath --subsystem "~/runx_Xauthority")"
-  Xservercookie="$(convertpath --subsystem "$(cmd.exe /C "echo %userprofile%")" | rmcr)/runx_Xauthority"
+  Xservercookie="$(convertpath --subsystem "$(MSYS2_ARG_CONV_EXCL='*' cmd.exe /C "echo %userprofile%")" | rmcr)/runx_Xauthority"
   
   verbose "Cookies:
   $Xservercookie
