@@ -300,7 +300,12 @@ check_host() {                  # Check host environment
   Hostip="$(ipconfig.exe | rmcr | grep -A6 'DockerNAT' | grep 'IPv4' | rev | cut -d' ' -f1 | rev)"
   [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr | grep 'IPv4' | grep -o '[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*' | grep "^10\.0\.*" )"
   [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr | grep 'IPv4' | head -n1 | rev | cut -d' ' -f1 | rev)"
-  verbose "Host IP adress: $Hostip"
+  
+  verbose "
+  Subsystem:         $Winsubsystem
+  Path to subsystem: $Winsubpath
+  Mount path:        $Winsubmount
+  IP address         $Hostip"
   
   return 0
 }
@@ -662,8 +667,8 @@ $Tasklistnew" | sort | uniq -u | sed '/^$/d')"
 
 trap finish EXIT
 declare_variables
-parse_options "$@"
 check_host
+parse_options "$@"
 check_dependencies
 [ "$Cleanup" = "yes" ] && cleanup && Exitcode="${Exitcode:-0}"
 [ -z "$Exitcode" ]     && main
