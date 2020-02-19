@@ -173,18 +173,19 @@ escapestring() {                # Escape special chars of $1
   echo "${1:-}" | LC_ALL=C sed -e 's/[^a-zA-Z0-9,._+@=:/-]/\\&/g; 1{$s/^$/""/}; 1!s/^/"/; $!s/$/"/'
 }
 
-convertpath() {                 # Convert unix and windows pathes
+convertpath() {                 # convert unix and windows pathes
   # $1: Mode:
-  #   --windows   echo windows path                - result: C:/path
-  #   --unix      echo unix path                   - result: /c/path
-  #   --subsystem echo path within subsystem       - result: /cygdrive/c/path  or  /path
-  #   --volume    echo --volume compatible syntax  - result: 'unixpath':'containerpath':rw  (or ":ro")
-  #   --container echo path of volume in container - result: /path
+  #     windows   echo Windows path                            - result: c:/path
+  #     unix      echo unix path                               - result: /c/path
+  #     subsystem echo path within subsystem                   - result: /cygdrive/c/path  or  /path  or /mnt/c/path
+  #     volume    echo --volume compatible syntax              - result: 'unixpath':'containerpath':rw  (or ":ro")
+  #     container echo path of volume in container             - result: /path
+  #     share     echo path of $Sharefolder/file in container  - result: /containerpath
   # $2: Path to convert. Arbitrary syntax, can be C:/path, /c/path, /cygdrive/c/path, /path
   #     Can have suffix :rw or :ro. If none is given, return with :rw
-  # $3: Optional for --volume: containerpath
+  # $3: Optional for mode volume: containerpath
   
-  local Mode= Path= Drive= Readwritemode=
+  local Mode Path Drive= Readwritemode
   
   Mode="${1:-}"
   Path="${2:-}"
@@ -198,13 +199,23 @@ convertpath() {                 # Convert unix and windows pathes
   # replace ~ with HOME
   Path="$(sed s%"~"%"${Hostuserhome:-${HOME:-}}"% <<< "$Path")"
   
+  # share: Replace $Sharefolder with $Sharefoldercontainer
+  [ "$Mode" = "share" ] && {
+    [ -z "$Path" ] && echo "" && return 0
+    case $X11dockermode in
+      run)            echo "${Sharefoldercontainer}${Path#$Sharefolder}" ;;
+      exe)            echo "$Path" ;;
+    esac
+    return 0
+  }
+  
   # not on Windows
   [ -z "$Winsubsystem" ] && {
     case $Mode in
-      --unix|--subsystem) echo "$Path" ;;
-      --windows) warning "Nonsense path conversion $Mode: $Path" ; return 1 ;;
-      --volume) echo "'$Path':'${3:-$Path}'$Readwritemode" ;;
-      --container) echo "${3:-$Path}" ;;
+      unix|subsystem) echo "$Path" ;;
+      windows)        warning "Nonsense path conversion $Mode: $Path" ; return 1 ;;
+      volume)         echo "'$Path':'${3:-$Path}'$Readwritemode" ;;
+      container)      echo "${3:-$Path}" ;;
     esac
     return 0
   }
@@ -231,15 +242,21 @@ convertpath() {                 # Convert unix and windows pathes
   Drive="${Drive,}"
 
   case $Winsubsystem in
-    WSL1|WSL2)
+    WSL1)
       [ -z "$Drive" ] && case $Mode in
-        --windows|--unix|--volume)
-          warning "Request of Windows path to path within WSL:
+        windows|unix|volume)
+          debugnote "convertpath(): Request of WSL path: $Path"
+          grep -q "$Cachefolder" <<< "$Path" || {
+            [ "$Readwritemode" = ":rw" ] && warning "Request of Windows path to path within WSL:
   $Path
-  Write access from Windows host to WSL files can damage WSL.
-  Read-only access is ok."
-      ;;
-    esac
+  Write access from Windows host to WSL files can damage the WSL file system. 
+  Read-only access is ok. 
+  Option --share: You can add :ro to the path to allow read-only access.
+  Example: --share='$Path:ro'"
+          }
+        ;;
+      esac
+    ;;
   esac
 
   case $Drive in
@@ -247,23 +264,29 @@ convertpath() {                 # Convert unix and windows pathes
       Path="${Path#"$Winsubpath"}"
       Drive="$(cut -c2 <<<"$Winsubpath")"
       case $Mode in
-        --windows)   echo "${Drive^}:$(cut -c3- <<<$Winsubpath)$Path" ;;
-        --unix)      echo "$Winsubpath$Path" ;;
-        --subsystem) echo "$Path" ;;
-        --volume)    echo "'$Winsubpath$Path':'${3:-$Path}'$Readwritemode" ;;
-        --container) echo "${3:-$Path}" ;;
+        windows)      echo "${Drive^}:$(cut -c3- <<<$Winsubpath)$Path" ;;
+        unix)         echo "$Winsubpath$Path" ;;
+        subsystem)    echo "$Path" ;;
+        volume)
+          case $Mobyvm in
+            no)  echo "'$Path':'${3:-$Path}'$Readwritemode" ;;
+            yes) echo "'$Winsubpath$Path':'${3:-$Path}'$Readwritemode" ;;
+          esac
+        ;;
+        container)    echo "${3:-$Path}" ;;
       esac
     ;;
     *) # Path outside of subsystem
       case $Mode in
-        --windows)   echo "${Drive^}:$Path" ;;
-        --unix)      echo "/$Drive$Path" ;;
-        --subsystem) echo "$Winsubmount/$Drive$Path" ;;
-        --volume)    echo "'/$Drive$Path':'${3:-/$Drive$Path}'$Readwritemode" ;;
-        --container) echo "${3:-/$Drive$Path}" ;;
+        windows)      echo "${Drive^}:$Path" ;;
+        unix)         echo "/$Drive$Path" ;;
+        subsystem)    echo "$Winsubmount/$Drive$Path" ;;
+        volume)       echo "'/$Drive$Path':'${3:-/$Drive$Path}'$Readwritemode" ;;
+        container)    echo "${3:-/$Drive$Path}" ;;
       esac
     ;;
   esac
+  
   return 0
 }
 
@@ -285,16 +308,19 @@ check_host() {                  # Check host environment
   case $Winsubsystem in
     MSYS2|CYGWIN) 
       Winsubmount="$(cygpath.exe -u "c:/" | rmcr | sed s%/c/%%)"
-      Winsubpath="$(convertpath --unix "$(cygpath.exe -w "/" | rmcr)" )" ;;
+      Winsubpath="$(convertpath unix "$(cygpath.exe -w "/" | rmcr)" )" 
+    ;;
     WSL1)
       Winsubmount="/mnt"
       grep -q "Windows" <<< "${PATH:-}" || export PATH="${PATH:-}:$Winsubmount/c/Windows/System32:$Winsubmount/c/Windows/System32/WindowsPowerShell/v1.0" # can miss after sudo
-      Winsubpath="$(convertpath --unix "$(getwslpath)")" ;;
+      Winsubpath="$(convertpath unix "$(getwslpath)")" ;;
     WSL2)
       Winsubmount=""
       grep -q "Windows" <<< "${PATH:-}" || export PATH="${PATH:-}:$Winsubmount/c/Windows/System32:$Winsubmount/c/Windows/System32/WindowsPowerShell/v1.0" # can miss after sudo
-      Winsubpath="$(convertpath --unix "$(getwslpath)")" ;;
+      Winsubpath="$(convertpath unix "$(getwslpath)")" ;;
   esac
+  Winsubmount="${Winsubmount%/}"
+  Winsubpath="${Winsubpath%/}"
   
   # Check IP of Windows host
   Hostip="$(ipconfig.exe | rmcr | grep -A6 'DockerNAT' | grep 'IPv4' | rev | cut -d' ' -f1 | rev)"
@@ -352,7 +378,7 @@ check_dependencies() {          # Check all dependencies
   
   # X server VcXsrv or XWin
   Vcxsrvexe="$(command -v vcxsrv.exe)"
-  [ "$Vcxsrvexe" ] || Vcxsrvexe="$(command -v "$(convertpath --subsystem "C:/Program Files/VcXsrv/vcxsrv.exe")")"
+  [ "$Vcxsrvexe" ] || Vcxsrvexe="$(command -v "$(convertpath subsystem "C:/Program Files/VcXsrv/vcxsrv.exe")")"
   Xwinexe="$(command -v XWin)"
   [ -z "$Xwinexe" ] && case $Winsubsystem in
     WSL1|WSL2)
@@ -400,8 +426,8 @@ check_dependencies() {          # Check all dependencies
 setup_cookie() {                # Generate X authentication cookie
   local Cookie
   
-  Xclientcookie="$(convertpath --subsystem "~/runx_Xauthority")"
-  Xservercookie="$(convertpath --subsystem "$(MSYS2_ARG_CONV_EXCL='*' cmd.exe /C "echo %userprofile%")" | rmcr)/runx_Xauthority"
+  Xclientcookie="$(convertpath subsystem "~/runx_Xauthority")"
+  Xservercookie="$(convertpath subsystem "$(MSYS2_ARG_CONV_EXCL='*' cmd.exe /C "echo %userprofile%")" | rmcr)/runx_Xauthority"
   
   verbose "Cookies:
   $Xservercookie
@@ -464,7 +490,7 @@ generate_xcommand() {           # Generate command to start X server VcXsrv
                 CYGWIN)    Xcommand="$Xcommand -auth '$Xservercookie'" ;;
                 WSL1|WSL2) Xcommand="$Xcommand -auth '/cygdrive${Xservercookie#$Winsubmount}'" ;;
               esac ;;
-        vcxsrv)            Xcommand="$Xcommand -auth '$(convertpath --windows "$Xservercookie")'" ;;
+        vcxsrv)            Xcommand="$Xcommand -auth '$(convertpath windows "$Xservercookie")'" ;;
       esac ;;
     no)                    Xcommand="$Xcommand -ac" ;;
   esac
