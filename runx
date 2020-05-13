@@ -310,14 +310,15 @@ check_host() {                  # Check host environment
       Winsubmount="$(cygpath.exe -u "c:/" | rmcr | sed s%/c/%%)"
       Winsubpath="$(convertpath unix "$(cygpath.exe -w "/" | rmcr)" )" 
     ;;
-    WSL1)
-      Winsubmount="/mnt"
-      grep -q "Windows" <<< "${PATH:-}" || export PATH="${PATH:-}:$Winsubmount/c/Windows/System32:$Winsubmount/c/Windows/System32/WindowsPowerShell/v1.0" # can miss after sudo
-      Winsubpath="$(convertpath unix "$(getwslpath)")" ;;
-    WSL2)
-      Winsubmount=""
-      grep -q "Windows" <<< "${PATH:-}" || export PATH="${PATH:-}:$Winsubmount/c/Windows/System32:$Winsubmount/c/Windows/System32/WindowsPowerShell/v1.0" # can miss after sudo
-      Winsubpath="$(convertpath unix "$(getwslpath)")" ;;
+    WSL1|WSL2)
+      command -v "/mnt/c/Windows/System32/cmd.exe" >/dev/null && Winsubmount="/mnt"
+      command -v "/c/Windows/System32/cmd.exe" >/dev/null     && Winsubmount=""
+      grep -q "Windows" <<< "${PATH:-}" || export PATH="${PATH:-}:$Winsubmount/c/Windows/System32:$Winsubmount/c/Windows/System32/WindowsPowerShell/v1.0" # can miss after sudo in WSL
+      command -v "$Winsubmount/c/Windows/System32/cmd.exe" >/dev/null || error "$Winsubsystem: Could not find cmd.exe 
+  in /mnt/c/Windows/System32 or /c/Windows/System32.
+  Do you have a different path to your Windows system partition?"
+      Winsubpath="$(convertpath unix "$(getwslpath)")"
+    ;;
   esac
   Winsubmount="${Winsubmount%/}"
   Winsubpath="${Winsubpath%/}"
