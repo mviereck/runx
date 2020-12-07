@@ -380,6 +380,7 @@ check_dependencies() {          # Check all dependencies
   # X server VcXsrv or XWin
   Vcxsrvexe="$(command -v vcxsrv.exe)"
   [ "$Vcxsrvexe" ] || Vcxsrvexe="$(command -v "$(convertpath subsystem "C:/Program Files/VcXsrv/vcxsrv.exe")")"
+  [ "$Vcxsrvexe" ] || Vcxsrvexe="$(command -v "$(convertpath subsystem "C:/Program Files/VcXsrv (x86)/vcxsrv.exe")")"
   Xwinexe="$(command -v XWin)"
   [ -z "$Xwinexe" ] && case $Winsubsystem in
     WSL1|WSL2)
