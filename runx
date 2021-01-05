@@ -324,7 +324,7 @@ check_host() {                  # Check host environment
   Winsubpath="${Winsubpath%/}"
   
   # Check IP of Windows host
-  Hostip="$(ipconfig.exe | rmcr | grep -A6 'DockerNAT' | grep 'IPv4' | rev | cut -d' ' -f1 | rev)"
+  [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr | grep -A6 'DockerNAT' | grep 'IPv4' | rev | cut -d' ' -f1 | rev)"
   [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr | grep 'IPv4' | grep -o '[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*' | grep "^10\.0\.*" )"
   [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr | grep 'IPv4' | head -n1 | rev | cut -d' ' -f1 | rev)"
   
@@ -569,6 +569,7 @@ parse_options() {
   
   Shortoptions="dghv"
   Longoptions="cleanup,clipboard::,desktop,display:,gpu,help,no-auth,size:,vcxsrv,verbose,version,xwin"
+  Longoptions="$Longoptions,ip:" # experimental
   
   Parsedoptions="$(getopt --options $Shortoptions --longoptions $Longoptions --name "$0" -- "$@" 2>/tmp/runx_parsererror)"
   [ -e /tmp/runx_parsererror ] && Parsererror=$(cat /tmp/runx_parsererror) && rm /tmp/runx_parsererror
@@ -591,6 +592,7 @@ parse_options() {
          --version)       echo "runx version $Version"; Exitcode=0 ;;
          --xwin)          Xserver="xwin" ;;
          --)              shift; Hostcommand="$@"; break ;;
+         --ip)            Hostip="${2:-}" ; shift ;; #experimental
       *) error "Unknown option: ${1:-}
   Look at 'runx --help' for valid options."
     esac
