@@ -1,7 +1,7 @@
 #! /bin/bash
 # runx: Provide an X server in Cygwin, MSYS2 or WSL.
 
-Version="v0.4"
+Version="v0.4.1"
 
 usage() {                       # Usage information (--help)
   echo "runx - Run Linux GUI applications on MS Windows.
@@ -325,6 +325,7 @@ check_host() {                  # Check host environment
   Winsubpath="${Winsubpath%/}"
   
   # Get IP of Windows host
+  [ "$Hostip" = "localhost" ] && Hostip="127.0.0.1"
   [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr | grep -A6 'DockerNAT' | grep 'IPv4' | grep -o '[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*' | head -n1 )"
   [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr                        | grep 'IPv4' | grep -o '192\.168\.[0-9]*\.[0-9]*'       | head -n1 )"
   [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr                        | grep 'IPv4' | grep -o '10\.0\.[0-9]*\.[0-9]*'          | head -n1 )"
