@@ -8,7 +8,7 @@
  - `runx` creates an authorization cookie to restrict access to the X server to allowed clients only.
  - `runx` runs the desired Linux GUI application with the credentials needed to access the X server.
  
-For similar functionality on native Linux systems use [x11docker](https://github.com/mviereck/x11docker) with options `--exe` or `--xonly`.
+For similar functionality on native Linux systems use [x11docker](https://github.com/mviereck/x11docker) with options `--backend=host` or `--xonly`.
 
 ## Table of contents
  - [Linux environments on MS Windows](#linux-environments-on-ms-windows)
@@ -34,7 +34,7 @@ For similar functionality on native Linux systems use [x11docker](https://github
 Installation in general:
  - Install an X server, *VcXsrv* or *XWin*.
  - Copy `runx` into folder `/usr/local/bin` and make it executeable with `chmod +x /usr/local/bin/runx`.
- - Install dependency `xauth`.
+ - Install dependency `xauth` if available.
  
 ### Installation of X server
 `runx` needs an [X server](https://en.wikipedia.org/wiki/X_Window_System). Install on MS Windows one or both of:
@@ -70,9 +70,7 @@ Installation in general:
    wget https://raw.githubusercontent.com/mviereck/runx/master/runx -O /usr/local/bin/runx
    chmod +x /usr/local/bin/runx
    ```
- - Constraints in MSYS2: 
-   - MSYS2 does not provide `xauth` to create authentication cookies to restrict access to the X server.
-For that reason, using `runix` in MSYS2 is possible, but discouraged. You need option `--no-auth`.
+ - Constraints in MSYS2:
    - In MSYS2 `runx` only supports X server *VcXsrv*, but not *XWin*.
 
 ## GPU hardware acceleration
@@ -132,6 +130,7 @@ Options:
       --clipboard [=yes|no]    Enable clipboard sharing yes/no. Default: yes.
       --display N              Use display number N for new X server.
                                Default: random number in range of 100...3376.
+      --ip ADRESS              IP adress to use. Default: First found 192.168.*
       --no-auth                Disable X cookie authentication. Discouraged.
       --cleanup                Stop all X servers and delete cookies.
   -v, --verbose                Be verbose.
@@ -150,8 +149,8 @@ Install an X server on Windows:
        https://www.cygwin.com
 VcXsrv is easier to install. XWin provides a better GPU support.
 
-WSL, Cygwin:       runx starts XWin if available, otherwise it starts VcXsrv.
-MSYS2 constraints: runx only supports VcXsrv without cookie authentication.
+WSL, Cygwin: runx starts XWin if available, otherwise it starts VcXsrv.
+MSYS2:       runx supports VcXsrv only.
 
 Usage:
 
@@ -172,6 +171,9 @@ Providing an X server in background all the time:
  - Create an entry in ~/.bashrc: source /usr/local/bin/runx
  - In future terminal session you can directly run GUI commands.
    E.g. just type:  'pcmanfm'  instead of 'runx -- pcmanfm'.
+
+runx version v0.4.3
+Please report issues and get help at:   https://github.com/mviereck/runx
  ```
  
  ## Screenshot

@@ -1,7 +1,7 @@
 #! /bin/bash
 # runx: Provide an X server in Cygwin, MSYS2 or WSL.
 
-Version="v0.4.2"
+Version="v0.4.3"
 
 usage() {                       # Usage information (--help)
   echo "runx - Run Linux GUI applications on MS Windows.
@@ -40,8 +40,8 @@ Install an X server on Windows:
        https://www.cygwin.com
 VcXsrv is easier to install. XWin provides a better GPU support.
 
-WSL, Cygwin:       runx starts XWin if available, otherwise it starts VcXsrv.
-MSYS2 constraints: runx only supports VcXsrv without cookie authentication.
+WSL, Cygwin: runx starts XWin if available, otherwise it starts VcXsrv.
+MSYS2:       runx supports VcXsrv only.
 
 Usage:
 
@@ -78,7 +78,7 @@ finish() {                      # Clean up and terminate
       unset -f check_host check_dependency check_dependencies setup_cookie generate_xcommand
       unset -f cleanup
       unset -f declare_variables parse_options main
-      
+
       unset Desktopmode Screensize Shareclipboard Sharegpu Verbose Xauthentication
       unset Esc Colblue Colyellow Colgreen Colgreenbg Colred Colredbg Coluline Colnorm
 
@@ -134,11 +134,9 @@ rmcr() {                        # Remove carriage return to translate DOS/Window
 }
 
 getwslpath() {                  # get path to currently running WSL system
-
   # Fork from https://github.com/Microsoft/WSL/issues/2578#issuecomment-354010141
-  
   local RUN_ID= BASE_PATH=
-  
+
   RUN_ID="/tmp/$(mcookie)"
 
   # Mark our filesystem with a temporary file having an unique name.
@@ -185,9 +183,9 @@ convertpath() {                 # convert unix and windows pathes
   # $2: Path to convert. Arbitrary syntax, can be C:/path, /c/path, /cygdrive/c/path, /path
   #     Can have suffix :rw or :ro. If none is given, return with :rw
   # $3: Optional for mode volume: containerpath
-  
+
   local Mode Path Drive= Readwritemode
-  
+
   Mode="${1:-}"
   Path="${2:-}"
 
@@ -199,7 +197,7 @@ convertpath() {                 # convert unix and windows pathes
 
   # replace ~ with HOME
   Path="$(sed s%"~"%"${Hostuserhome:-${HOME:-}}"% <<< "$Path")"
-  
+
   # share: Replace $Sharefolder with $Sharefoldercontainer
   [ "$Mode" = "share" ] && {
     [ -z "$Path" ] && echo "" && return 0
@@ -209,7 +207,7 @@ convertpath() {                 # convert unix and windows pathes
     esac
     return 0
   }
-  
+
   # not on Windows
   [ -z "$Winsubsystem" ] && {
     case $Mode in
@@ -220,25 +218,26 @@ convertpath() {                 # convert unix and windows pathes
     esac
     return 0
   }
-  
+
   # replace \ with /
   Path="$(tr '\\' '/' <<< "$Path")"
-  
+
   # remove possible already given mountpoint
   Path="${Path#$Winsubmount}"
-  
+
   # Given format is /c/
-  [ "$(cut -c1,3 <<< "$Path")" = "//" ] && {
+  [ "$(cut -c1,3 <<< "${Path}")" = "//" ] && {
     Drive="$(cut -c2 <<< "$Path")"
     Path="$(cut -c3- <<< "$Path")"
+    Path="${Path:-"/"}"
   }
-  
+
   # Given format is C:/
   [ "$(cut -c2 <<< "$Path")" = ":" ] && {
     Drive="$(cut -c1 <<< "$Path")"
     Path="$(cut -c3- <<< "$Path")"
   }
-  
+
   # change C to c
   Drive="${Drive,}"
 
@@ -287,7 +286,7 @@ convertpath() {                 # convert unix and windows pathes
       esac
     ;;
   esac
-  
+
   return 0
 }
 
@@ -302,10 +301,10 @@ check_host() {                  # Check host environment
   }
   uname -r | grep -q Microsoft                    && Winsubsystem="WSL1"
   uname -r | grep -q microsoft                    && Winsubsystem="WSL2"
-  
+
   [ "$0" = "$BASH_SOURCE" ] && Sourced="no" || Sourced="yes"
   verbose "Script is being sourced yes/no: $Sourced"
-  
+
   case $Winsubsystem in
     MSYS2|CYGWIN) 
       Winsubmount="$(cygpath.exe -u "c:/" | rmcr | sed s%/c/%%)"
@@ -323,19 +322,19 @@ check_host() {                  # Check host environment
   esac
   Winsubmount="${Winsubmount%/}"
   Winsubpath="${Winsubpath%/}"
-  
+
   # Get IP of Windows host
   [ "$Hostip" = "localhost" ] && Hostip="127.0.0.1"
   [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr | grep 'IPv4' | grep -o '192\.168\.[0-9]*\.[0-9]*'       | head -n1 )"
   [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr | grep 'IPv4' | grep -o '10\.0\.[0-9]*\.[0-9]*'          | head -n1 )"
   [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr | grep 'IPv4' | grep -o '[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*' | head -n1 )"
-  
+
   verbose "
   Subsystem:         $Winsubsystem
   Path to subsystem: $Winsubpath
   Mount path:        $Winsubmount
   IP address         $Hostip"
-  
+
   return 0
 }
 
@@ -350,7 +349,7 @@ check_dependency() {            # Check for single command
 
 check_dependencies() {          # Check all dependencies
   local Line
-  
+
   # subsystem
   case "$Winsubsystem" in
     WSL1|WSL2|CYGWIN|MSYS2) ;;
@@ -362,23 +361,7 @@ check_dependencies() {          # Check all dependencies
   Fallback: Enabling option --vcxsrv."
     Xserver="vcxsrv"
   }
-  
-  # xauth
-  [ "$Xauthentication" = "yes" ] && {
-    check_dependency xauth || {
-      case $Winsubsystem in
-        WSL1|WSL2|CYGWIN) error "Missing dependency: xauth
-  Cannot create an authorization cookie for X server access.
-  Please install package 'xauth'.
-  You can disable cookie authentication with discouraged option --no-auth." ;;
-        MSYS2) error "Missing dependency: xauth
-  Cannot create an authorization cookie for X server access.
-  MSYS2 does not provide xauth. Rather use Cygwin or WSL instead.
-  You can disable cookie authentication with discouraged option --no-auth." ;;
-      esac
-    }
-  }
-  
+
   # X server VcXsrv or XWin
   Vcxsrvexe="$(command -v vcxsrv.exe)"
   [ "$Vcxsrvexe" ] || Vcxsrvexe="$(command -v "$(convertpath subsystem "C:/Program Files/VcXsrv/vcxsrv.exe")")"
@@ -398,16 +381,16 @@ check_dependencies() {          # Check all dependencies
   verbose "Found X servers:
   $Vcxsrvexe
   $Xwinexe"
-  
+
   [ -z "$Xserver" ] && [ -n "$Xwinexe" ]  && Xserver="xwin"
   [ -z "$Xserver" ]                       && Xserver="vcxsrv"
   [ "$Winsubsystem" = "MSYS2" ]           && Xserver="vcxsrv"
-  
+
   case "$Xserver" in
     vcxsrv) Xserverexe="$Vcxsrvexe" ;;
     xwin)   Xserverexe="$Xwinexe" ;;
   esac
-  
+
   [ -z "$Xserverexe" ] && {
     case $Winsubsystem in
       WSL1|WSL2|CYGWIN) error "No X server found. 
@@ -420,19 +403,75 @@ check_dependencies() {          # Check all dependencies
       https://sourceforge.net/projects/vcxsrv" ;;
     esac
   }
-  
+
   # Windows commands
   for Line in cmd.exe ipconfig.exe powershell.exe tasklist.exe taskkill.exe; do
     check_dependency "$Line" || error "Did not find Windows command: $Line"
   done
 }
 
+cookiebaker() {                 # create an X cookie without xauth
+  # $1  DISPLAY
+  # Write directly to file, bash cannot store nullbytes in a string.
+  # Based on https://stackoverflow.com/questions/70932880/what-is-the-internal-format-of-xauthority-file
+  # and chapter 6.2.5 in https://refspecs.linuxfoundation.org/LSB_5.0.0/LSB-Desktop-generic/LSB-Desktop-generic/libx11-ddefs.html
+
+  local Display
+  local Address Addresslength Displaynumber Displaynumberlength Data Part Code
+
+  Display="${1:-$DISPLAY}"
+
+  Address="$(printf "%s" "$Display" | cut -d: -f1)"
+  case "$Address" in
+    "")
+      Address="$(hostname)/unix"
+      Addresslength="$(strlenhex "$Address")"
+    ;;
+    *.*.*.*)
+      Data="$Address"
+      Address=""
+      while [ "$(printf "%s" "$Data" | wc -c)" -gt 0 ]; do
+        Part="$( printf "%s" "$Data" | cut -d. -f1)"
+        Address="${Address}\x$(printf "%x" "$Part")"
+        Data="$( printf "%s" "$Data" | cut -s -d. -f2-)"
+      done
+      Addresslength="4"
+    ;;
+    *)
+      Addresslength="$(strlenhex "$Address")"
+    ;;
+  esac
+
+  Displaynumber="$(printf "%s" "$Display" | cut -d: -f2)"
+  Displaynumber="$(printf "%s" "$Displaynumber" | cut -d. -f1)"
+  Displaynumberlength="$(strlenhex "$Displaynumber")"
+
+  Data="$(makecookie)"
+  while [ "$(printf "%s" "$Data" | wc -c)" -gt 0 ]; do
+    Part="$( printf "%s" "$Data" | cut -c1-2)"
+    Code="${Code}\x$Part"
+    Data="$( printf "%s" "$Data" | cut -c3-)"
+  done
+
+  awk "BEGIN{
+    printf \"\xFF\xFF\"
+    printf \"\x00\x${Addresslength}\" 
+    printf \"${Address}\"
+    printf \"\x00\x${Displaynumberlength}\" 
+    printf \"${Displaynumber}\"
+    printf \"\x00\x12\"
+    printf \"MIT-MAGIC-COOKIE-1\"
+    printf \"\x00\x10\"
+    printf \"${Code}\"
+  }"
+}
+
 setup_cookie() {                # Generate X authentication cookie
   local Cookie
-  
+
   Xclientcookie="$(convertpath subsystem "~/runx_Xauthority")"
   Xservercookie="$(convertpath subsystem "$(MSYS2_ARG_CONV_EXCL='*' cmd.exe /C "echo %userprofile%")" | rmcr)/runx_Xauthority"
-  
+
   verbose "Cookies:
   $Xservercookie
   $Xclientcookie"
@@ -445,27 +484,34 @@ setup_cookie() {                # Generate X authentication cookie
       [ -e "$Xclientcookie" ] && rm "$Xclientcookie"
     }
   }
-  
+
   touch "$Xclientcookie"
   touch "$Xservercookie"
-  
-  # generate fresh cookie
-  xauth -i -f "$Xclientcookie" add :$Newdisplaynumber . $(mcookie)
-  # prepare cookie with localhost identification disabled by ffff. ffff means 'familiy wild'
-  Cookie="$(xauth -i -f "$Xclientcookie" nlist | sed -e 's/^..../ffff/')"
-  echo "$Cookie" | xauth -i -f "$Xclientcookie" nmerge -
-  echo "$Cookie" | xauth -i -f "$Xservercookie" nmerge -
-  
-  verbose "Client cookie:
+
+  command -v xauth >/dev/null && {
+    # generate fresh cookie
+    xauth -i -f "$Xclientcookie" add :$Newdisplaynumber . $(mcookie)
+    # prepare cookie with localhost identification disabled by ffff. ffff means 'familiy wild'
+    Cookie="$(xauth -i -f "$Xclientcookie" nlist | sed -e 's/^..../ffff/')"
+    echo "$Cookie" | xauth -i -f "$Xclientcookie" nmerge -
+    echo "$Cookie" | xauth -i -f "$Xservercookie" nmerge -
+
+    verbose "Client cookie:
 $(xauth -v -f "$Xclientcookie" list)"
-  verbose "Server cookie:
+    verbose "Server cookie:
 $(xauth -v -f "$Xservercookie" list)"
+  } || {
+    cookiebaker $Hostip:$Newdisplaynumber > $Xclientcookie.tmp
+    cat $Xclientcookie.tmp >> $Xclientcookie
+    cat $Xclientcookie.tmp >> $Xservercookie
+    rm  $Xclientcookie.tmp
+  }
 }
 
 generate_xcommand() {           # Generate command to start X server VcXsrv
 
   Xcommand="$(escapestring "$Xserverexe") :$Newdisplaynumber -listen tcp -retro -lesspointer"
-  
+
   # GPU hardware acceleration
   case $Sharegpu in
     yes) Xcommand="$Xcommand -wgl   +iglx" ; export LIBGL_ALWAYS_INDIRECT=1 
@@ -474,16 +520,16 @@ generate_xcommand() {           # Generate command to start X server VcXsrv
     ;;
     no)  Xcommand="$Xcommand -nowgl -iglx" ; unset  LIBGL_ALWAYS_INDIRECT ; export LIBGL_ALWAYS_INDIRECT ;;
   esac
-  
+
   # Seamless or desktop mode
   [ "$Desktopmode" = "no" ] && Xcommand="$Xcommand -multiwindow"
-      
+
   # Clipboard
   case $Shareclipboard in
     yes) Xcommand="$Xcommand -clipboard" ;;
     no)  Xcommand="$Xcommand -noclipboard" ;;
   esac
-  
+
   # Screensize
   [ "$Screensize" ] && Xcommand="$Xcommand -screen 0 '$Screensize'"
 
@@ -498,7 +544,7 @@ generate_xcommand() {           # Generate command to start X server VcXsrv
       esac ;;
     no)                    Xcommand="$Xcommand -ac" ;;
   esac
-  
+
   # X server extensions
   Xcommand="$Xcommand \
   +extension RANDR \
@@ -509,7 +555,7 @@ generate_xcommand() {           # Generate command to start X server VcXsrv
   +extension COMPOSITE \
   -extension X-Resource \
   -extension XTEST"
-  
+
   verbose "Generated X command:
   $Xcommand"
 }
@@ -537,7 +583,7 @@ declare_variables() {
   Sharegpu="no"
   Verbose="no"
   Xauthentication="yes"
-  
+
   # Terminal colors used for messages and --verbose=c
   Esc="$(printf '\033')"
   Colblue="${Esc}[35m"
@@ -548,7 +594,7 @@ declare_variables() {
   Colredbg="${Esc}[41m"
   Coluline="${Esc}[4m"
   Colnorm="${Esc}[0m"
-  
+
   # Empty global vars needed later
   Exitcode=""
   Hostip=""
@@ -568,17 +614,15 @@ declare_variables() {
 
 parse_options() {
   local Shortoptions Longoptions Parsererror
-  
+
   Shortoptions="dghv"
   Longoptions="cleanup,clipboard::,desktop,display:,gpu,help,no-auth,size:,vcxsrv,verbose,version,xwin"
   Longoptions="$Longoptions,ip:" # experimental
-  
-  Parsedoptions="$(getopt --options $Shortoptions --longoptions $Longoptions --name "$0" -- "$@" 2>/tmp/runx_parsererror)"
-  [ -e /tmp/runx_parsererror ] && Parsererror=$(cat /tmp/runx_parsererror) && rm /tmp/runx_parsererror
-  [ "$Parsererror" ] && error "$Parsererror"
+
+  Parsedoptions="$(getopt --options $Shortoptions --longoptions $Longoptions --name "$0" -- "$@")" || error "Failed to parse options. See 'runx --help'."
   eval set -- "$Parsedoptions"
   verbose "$Parsedoptions"
-  
+
   while [ $# -gt 0 ]; do
     case "${1:-}" in
          --cleanup)       Cleanup="yes" ;;
@@ -596,7 +640,7 @@ parse_options() {
          --xwin)          Xserver="xwin" ;;
          --)              shift; Hostcommand="$@"; break ;;
       *) error "Unknown option: ${1:-}
-  Look at 'runx --help' for valid options."
+  Look at 'runx --help' for valid options." ;;
     esac
     shift
   done
@@ -612,7 +656,7 @@ main() {
   If this display number is already in use, X server startup  will fail.
   You can specify a display number N with option '--display N'."
   }
-  
+
   [ "$Xauthentication" = "yes" ] && setup_cookie
   generate_xcommand
 
@@ -620,7 +664,7 @@ main() {
   to the X server. If no application window appears, but no obvious error
   is shown, please check your firewall settings. 
   Compare:   https://github.com/mviereck/x11docker/issues/108"
-  
+
   # set DISPLAY and XAUTHORITY, output on stdout
   export DISPLAY=$Hostip:$Newdisplaynumber
   case "$Xauthentication" in
@@ -643,15 +687,15 @@ main() {
       echo "DISPLAY=$DISPLAY"
     ;;
   esac
-  
+
   case "$Verbose" in
     yes) Xcommand="$Xcommand 1>&2" ;;
     no)  Xcommand="$Xcommand >/dev/null 2>&1" ;;
   esac
-  
+
   # Run X in background?
   { [ "$Hostcommand" ] || [ "$Sourced" = "yes" ] ; }  && Xcommand="$Xcommand & Xserverpid=\$!"
-  
+
   # Store Windows PID list
   case $Winsubsystem in
     WSL1|WSL2) Tasklistold="$(tasklist.exe | rmcr | grep -i ${Xserver}.exe | awk '{print $2}')" ;;
@@ -669,7 +713,7 @@ $Tasklistnew" | sort | uniq -u | sed '/^$/d')"
       verbose "Windows PID of X server: $Xserverwinpid"
     ;;
   esac
-  
+
   # Check for successfull startup
   [ "$Xserverpid" ] && {
     verbose "Linux PID of X server: $Xserverpid
@@ -688,7 +732,7 @@ $Tasklistnew" | sort | uniq -u | sed '/^$/d')"
       vcxsrv) sleep 1 ;;
     esac
   }
-  
+
   # Run host command
   [ -z "$Exitcode" ] && [ "$Hostcommand" ] && {
     verbose "Executing command:
