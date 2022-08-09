@@ -76,7 +76,7 @@ finish() {                      # Clean up and terminate
       unset -f error warning note verbose
       unset -f rmcr getwslpath escapestring convertpath
       unset -f check_display check_displayport cookiebaker makecookie strlenhex
-      unset -f check_host check_dependency check_dependencies setup_cookie generate_xcommand
+      unset -f check_host check_dependency check_xserver setup_cookie generate_xcommand
       unset -f cleanup
       unset -f declare_variables parse_options main
 
@@ -122,6 +122,14 @@ verbose() {                     # Show verbose message (--verbose)
 
 #### general routines
 
+check_dependency() {            # Check for single command
+  [ "${1:-}" ] || return 1
+  command -v "${1:-}" >/dev/null || {
+    note "Command not found: ${1:-}"
+    return 1
+  }
+  return 0
+}
 rmcr() {                        # Remove carriage return to translate DOS/Windows newlines into UNIX newlines.
   # Convert stdin if $1 is empty. Otherwise convert file $1.
   case "${1:-}" in
@@ -291,9 +299,6 @@ strlenhex() {                   # print byte length of string $1 as hex value
 }
 
 #### setup
-check_displayport() {           # return 0 if display number $1 is in use
-  echo "quit" | env LC_ALL=C telnet "$Hostip" "$((6000+${1:-}))" 2>&1 | grep -q "Connected"
-}
 check_display() {               # find unused display number
   local Displaynumber
   for Displaynumber in $(seq 999 | shuf); do
@@ -304,6 +309,9 @@ check_display() {               # find unused display number
   done
   return 1
 }
+check_displayport() {           # return 0 if display number $1 is in use
+  echo "quit" | env LC_ALL=C telnet "$Hostip" "$((6000+${1:-}))" 2>&1 | grep -q "Connected"
+}
 check_host() {                  # Check host environment
 
   # Check for MS Windows subsystem
@@ -313,6 +321,11 @@ check_host() {                  # Check host environment
   }
   uname -r | grep -q Microsoft                    && Winsubsystem="WSL1"
   uname -r | grep -q microsoft                    && Winsubsystem="WSL2"
+  case "$Winsubsystem" in
+    WSL1|WSL2|CYGWIN|MSYS2) ;;
+    *) error "runx is designed to run on MS Windows in WSL, Cygwin or MSYS2.
+  Did not detect WSL, Cygwin or MSYS2." ;;
+  esac
 
   [ "$0" = "$BASH_SOURCE" ] && Sourced="no" || Sourced="yes"
   verbose "Script is being sourced yes/no: $Sourced"
@@ -349,23 +362,9 @@ check_host() {                  # Check host environment
 
   return 0
 }
-check_dependency() {            # Check for single command
-  [ "${1:-}" ] || return 1
-  command -v "${1:-}" >/dev/null || {
-    note "Command not found: ${1:-}"
-    return 1
-  }
-  return 0
-}
-check_dependencies() {          # Check all dependencies
+check_xserver() {          # Check all dependencies
   local Line
 
-  # subsystem
-  case "$Winsubsystem" in
-    WSL1|WSL2|CYGWIN|MSYS2) ;;
-    *) error "runx is designed to run on MS Windows in WSL, Cygwin or MSYS2.
-  Did not detect WSL, Cygwin or MSYS2." ;; ###
-  esac
   [ "$Winsubsystem" = "MSYS2" ] && [ "$Xserver" = "xwin" ] && {
     note "runx in MSYS2 does not support --xwin.
   Fallback: Enabling option --vcxsrv."
@@ -408,22 +407,12 @@ check_dependencies() {          # Check all dependencies
       https://sourceforge.net/projects/vcxsrv
   or install Cygwin with packages xinit and xauth to provide XWin:
       https://www.cygwin.com/" ;;
-      MSYS2)      error "No X server found for MSYS2. 
+      MSYS2)            error "No X server found for MSYS2. 
   Please install X server VcXsrv:
       https://sourceforge.net/projects/vcxsrv" ;;
     esac
   }
-
-  # Windows commands
-  for Line in cmd.exe ipconfig.exe powershell.exe tasklist.exe taskkill.exe; do
-    check_dependency "$Line" || error "Did not find Windows command: $Line"
-  done
-
-  # Linux commands
-  for Line in telnet shuf; do
-    check_dependency "$Line" || error "Did not find Linux command: $Line
-  Please install $Line"
-  done
+  return 0
 }
 cookiebaker() {                 # create an X cookie without xauth
   # $1  DISPLAY
@@ -652,11 +641,69 @@ parse_options() {
     shift
   done
 }
+start_xserver() {
+  check_xserver
+  generate_xcommand
+  [ "$Xauthentication" = "yes" ] && setup_cookie
+
+  case "$Verbose" in
+    yes) Xcommand="$Xcommand 1>&2" ;;
+    no)  Xcommand="$Xcommand >/dev/null 2>&1" ;;
+  esac
+
+  # Run X in background?
+  { [ "$Hostcommand" ] || [ "$Sourced" = "yes" ] ; }  && Xcommand="$Xcommand & Xserverpid=\$!"
+
+  # Store Windows PID list
+  case $Winsubsystem in
+    WSL1|WSL2) Tasklistold="$(tasklist.exe | rmcr | grep -i ${Xserver}.exe | awk '{print $2}')" ;;
+  esac
+
+  # Run X server
+  eval $Xcommand 
+
+  # Find Windows PID of X server
+  case $Winsubsystem in
+    WSL1|WSL2) 
+      Tasklistnew="$(tasklist.exe | rmcr | grep -i ${Xserver}.exe | awk '{print $2}')"
+      Xserverwinpid="$(echo "$Tasklistold
+$Tasklistnew" | sort | uniq -u | sed '/^$/d')"
+      verbose "Windows PID of X server: $Xserverwinpid"
+    ;;
+  esac
+
+  # Check for successfull startup
+  [ "$Xserverpid" ] && {
+    verbose "Linux PID of X server: $Xserverpid
+  $(ps -p "$Xserverpid")"
+    case "$Xserver" in
+      xwin)
+        for Waiting in 1 2 3 4 5 6 7 8 9 10; do
+          [ -e "$(dirname "$Xwinexe")/../../tmp/.X11-unix/X$Newdisplaynumber" ] && Xready="yes"
+          [ -e "$(dirname "$Xwinexe")/../tmp/.X11-unix/X$Newdisplaynumber" ]    && Xready="yes"
+          sleep 1
+          [ "$Xready" ] && break
+          verbose "Waiting since ${Waiting}s for XWin to be ready."
+        done
+        [ "$Xready" ] && verbose "X server XWin ready after ${Waiting}s." || error "X server XWin not ready after  ${Waiting}s."
+      ;;
+      vcxsrv) sleep 1 ;;
+    esac
+  }
+}
 main() {
   local Waiting Tasklistold Tasklistnew Xalreadyrunning
 
-  Xclientcookie="$(convertpath subsystem "~/runx_Xauthority")"
-  Xservercookie="$(convertpath subsystem "$(MSYS2_ARG_CONV_EXCL='*' cmd.exe /C "echo %userprofile%")" | rmcr)/runx_Xauthority"
+  # Dependency checks
+#  # Windows commands ### check disabled for faster startup
+#  for Line in cmd.exe ipconfig.exe powershell.exe tasklist.exe taskkill.exe; do
+#    check_dependency "$Line" || error "Did not find Windows command: $Line"
+#  done
+  # Linux commands
+  for Line in telnet shuf; do
+    check_dependency "$Line" || error "Did not find Linux command: $Line
+  Please install $Line"
+  done
 
   Xalreadyrunning="no"
   [ -n "$Newdisplaynumber" ] && {
@@ -666,7 +713,6 @@ main() {
       Xalreadyrunning="yes"
     }
   }
-
   [ -z "$Newdisplaynumber" ] && {
     Newdisplaynumber="$(check_display)" || error "runx: Did not find a free display number."
   }
@@ -680,6 +726,8 @@ main() {
   export DISPLAY=$Hostip:$Newdisplaynumber
   case "$Xauthentication" in
     yes)
+      Xclientcookie="$(convertpath subsystem "~/runx_Xauthority")"
+      Xservercookie="$(convertpath subsystem "$(MSYS2_ARG_CONV_EXCL='*' cmd.exe /C "echo %userprofile%")" | rmcr)/runx_Xauthority"
       export XAUTHORITY="$Xclientcookie"
       verbose "DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY"
       note "If you get application error messages like 'Cannot open display'
@@ -699,57 +747,10 @@ main() {
     ;;
   esac
 
-  [ "$Xalreadyrunning" = "no" ] && {
-    [ "$Xauthentication" = "yes" ] && setup_cookie
-    generate_xcommand
+  # run X
+  [ "$Xalreadyrunning" = "no" ] && start_xserver
 
-    case "$Verbose" in
-      yes) Xcommand="$Xcommand 1>&2" ;;
-      no)  Xcommand="$Xcommand >/dev/null 2>&1" ;;
-    esac
-
-    # Run X in background?
-    { [ "$Hostcommand" ] || [ "$Sourced" = "yes" ] ; }  && Xcommand="$Xcommand & Xserverpid=\$!"
-
-    # Store Windows PID list
-    case $Winsubsystem in
-      WSL1|WSL2) Tasklistold="$(tasklist.exe | rmcr | grep -i ${Xserver}.exe | awk '{print $2}')" ;;
-    esac
-
-    # Run X server
-    eval $Xcommand 
-
-    # Find Windows PID of X server
-    case $Winsubsystem in
-      WSL1|WSL2) 
-        Tasklistnew="$(tasklist.exe | rmcr | grep -i ${Xserver}.exe | awk '{print $2}')"
-        Xserverwinpid="$(echo "$Tasklistold
-$Tasklistnew" | sort | uniq -u | sed '/^$/d')"
-        verbose "Windows PID of X server: $Xserverwinpid"
-      ;;
-    esac
-
-    # Check for successfull startup
-    [ "$Xserverpid" ] && {
-      verbose "Linux PID of X server: $Xserverpid
-  $(ps -p "$Xserverpid")"
-      case "$Xserver" in
-        xwin)
-          for Waiting in 1 2 3 4 5 6 7 8 9 10; do
-            [ -e "$(dirname "$Xwinexe")/../../tmp/.X11-unix/X$Newdisplaynumber" ] && Xready="yes"
-            [ -e "$(dirname "$Xwinexe")/../tmp/.X11-unix/X$Newdisplaynumber" ]    && Xready="yes"
-            sleep 1
-            [ "$Xready" ] && break
-            verbose "Waiting since ${Waiting}s for XWin to be ready."
-          done
-          [ "$Xready" ] && verbose "X server XWin ready after ${Waiting}s." || error "X server XWin not ready after  ${Waiting}s."
-        ;;
-        vcxsrv) sleep 1 ;;
-      esac
-    }
-  }
-
-  # Run host command
+  # run host command
   [ -z "$Exitcode" ] && [ "$Hostcommand" ] && {
     verbose "Executing command:
   $Hostcommand"
@@ -761,7 +762,6 @@ trap finish EXIT
 declare_variables
 check_host
 parse_options "$@"
-check_dependencies
 [ "$Cleanup" = "yes" ] && cleanup && Exitcode="${Exitcode:-0}"
 [ -z "$Exitcode" ]     && main
 finish "${Exitcode:-0}"
