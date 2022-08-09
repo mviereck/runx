@@ -34,7 +34,8 @@ For similar functionality on native Linux systems use [x11docker](https://github
 Installation in general:
  - Install an X server, *VcXsrv* or *XWin*.
  - Copy `runx` into folder `/usr/local/bin` and make it executeable with `chmod +x /usr/local/bin/runx`.
- - Install dependency `xauth` if available.
+ - Install Linux dependency `xauth` if available.
+ - Install Linux dependency `telnet`.
  
 ### Installation of X server
 `runx` needs an [X server](https://en.wikipedia.org/wiki/X_Window_System). Install on MS Windows one or both of:
@@ -52,11 +53,11 @@ Installation in general:
    sudo wget https://raw.githubusercontent.com/mviereck/runx/master/runx -O /usr/local/bin/runx
    sudo chmod +x /usr/local/bin/runx
    sudo apt update
-   sudo apt install xauth
+   sudo apt install xauth telnet
    ```
    
 ### Installation in Cygwin
- - Run the Cygwin installer and install packages `xinit`, `xauth` and `wget`.
+ - Run the Cygwin installer and install packages `xinit`, `xauth`, `wget` and `inetutils`.
  - In Cygwin terminal run the commands:
    ```
    wget https://raw.githubusercontent.com/mviereck/runx/master/runx -O /usr/local/bin/runx
@@ -70,8 +71,7 @@ Installation in general:
    wget https://raw.githubusercontent.com/mviereck/runx/master/runx -O /usr/local/bin/runx
    chmod +x /usr/local/bin/runx
    ```
- - Constraints in MSYS2:
-   - In MSYS2 `runx` only supports X server *VcXsrv*, but not *XWin*.
+ - Constraint in MSYS2: `runx` only supports X server *VcXsrv*, but not *XWin*.
 
 ## GPU hardware acceleration
 `runx` supports GPU hardware accelerated graphics with option `--gpu`.
