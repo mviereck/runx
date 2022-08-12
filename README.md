@@ -57,7 +57,7 @@ Installation in general:
    ```
    
 ### Installation in Cygwin
- - Run the Cygwin installer and install packages `xinit`, `xauth`, `wget` and `inetutils`.
+ - Run the Cygwin installer and install packages `xinit`, `xauth` and `wget`.
  - In Cygwin terminal run the commands:
    ```
    wget https://raw.githubusercontent.com/mviereck/runx/master/runx -O /usr/local/bin/runx
