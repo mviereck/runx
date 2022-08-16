@@ -467,13 +467,10 @@ generate_xcommand() {           # Generate command to start X server VcXsrv
   case $Xauthentication in
     yes) 
       case "$Xserver" in
-        xwin) case "$Winsubsystem" in
-                CYGWIN)    Xcommand="$Xcommand -auth '$Xservercookie'" ;;
-                WSL1|WSL2) Xcommand="$Xcommand -auth '/cygdrive${Xservercookie#$Winsubmount}'" ;;
-              esac ;;
-        vcxsrv)            Xcommand="$Xcommand -auth '$(convertpath windows "$Xservercookie")'" ;;
+        xwin)   Xcommand="$Xcommand -auth '$(convertpath subsystem "$Xcookie")'" ;;
+        vcxsrv) Xcommand="$Xcommand -auth '$(convertpath windows   "$Xcookie")'" ;;
       esac ;;
-    no)                    Xcommand="$Xcommand -ac" ;;
+    no)         Xcommand="$Xcommand -ac" ;;
   esac
 
   # X server extensions
@@ -493,45 +490,36 @@ generate_xcommand() {           # Generate command to start X server VcXsrv
 setup_cookie() {                # Generate X authentication cookie
   local Cookie
 
-  verbose "Cookies:
-  server: $Xservercookie
-  client: $Xclientcookie"
+  verbose "Cookie path: $Xcookie"
 
   # remove old cookies if no VcXsrv is running yet
   command -v tasklist.exe >/dev/null && {
     tasklist.exe | rmcr | grep -q -E 'vcxsrv.exe|XWin.exe' || {
       verbose "Removing old cookies."
-      [ -e "$Xservercookie" ] && rm "$Xservercookie"
-      [ -e "$Xclientcookie" ] && rm "$Xclientcookie"
+      [ -e "$Xcookie" ] && rm "$Xcookie"
     }
   }
 
-  touch "$Xclientcookie"
-  touch "$Xservercookie"
+  touch "$Xcookie"
 
   command -v xauth >/dev/null && {
     # generate fresh cookie
-    xauth -i -f "$Xclientcookie" add :$Newdisplaynumber . $(mcookie)
+    xauth -i -f "$Xcookie" add :$Newdisplaynumber . $(mcookie)
     # prepare cookie with localhost identification disabled by ffff. ffff means 'familiy wild'
-    Cookie="$(xauth -i -f "$Xclientcookie" nlist | sed -e 's/^..../ffff/')"
-    printf "$Cookie" | xauth -i -f "$Xclientcookie" nmerge -
-    printf "$Cookie" | xauth -i -f "$Xservercookie" nmerge -
+    Cookie="$(xauth -i -f "$Xcookie" nlist | sed -e 's/^..../ffff/')"
+    printf "$Cookie" | xauth -i -f "$Xcookie" nmerge -
 
-    verbose "Client cookie:
-$(xauth -v -f "$Xclientcookie" list)"
-    verbose "Server cookie:
-$(xauth -v -f "$Xservercookie" list)"
+    verbose "Cookie: $(xauth -v -f "$Xcookie" list)"
   } || {
     note "Command xauth not found.
   runx will try experimental code to bake an X cookie itself.
   Feedback on success or failure is appreciated at:
   https://github.com/mviereck/runx/issues/7
   If it fails, you can use option --no-auth as a workaround."
-#    cookiebaker $Hostip:$Newdisplaynumber > $Xclientcookie.tmp
-    cookiebaker :$Newdisplaynumber > $Xclientcookie.tmp
-    cat $Xclientcookie.tmp >> $Xclientcookie
-    cat $Xclientcookie.tmp >> $Xservercookie
-    rm  $Xclientcookie.tmp
+    #cookiebaker $Hostip:$Newdisplaynumber > $Xcookie.tmp
+    cookiebaker :$Newdisplaynumber > $Xcookie.tmp
+    cat $Xcookie.tmp >> $Xcookie
+    rm  $Xcookie.tmp
   }
 }
 start_xserver() {               # run X
@@ -593,8 +581,7 @@ cleanup() {                     # --cleanup: Terminate X servers, delete cookies
   MSYS2_ARG_CONV_EXCL='*' taskkill.exe /F /PID xwin.exe
   # Remove cookies
   Newdisplaynumber=0
-  setup_cookie
-  rm -v "$Xclientcookie" "$Xservercookie"
+  rm -v "$Xcookie"
 }
 
 ### main
@@ -731,11 +718,10 @@ main() {
 
   # set DISPLAY and XAUTHORITY, output on stdout
   export DISPLAY=$Hostip:$Newdisplaynumber
+  Xcookie="$(convertpath subsystem "$(MSYS2_ARG_CONV_EXCL='*' cmd.exe /C "echo %userprofile%")" | rmcr)/Xauthority.runx"
   case "$Xauthentication" in
     yes)
-      Xclientcookie="$(convertpath subsystem "~/runx_Xauthority")"
-      Xservercookie="$(convertpath subsystem "$(MSYS2_ARG_CONV_EXCL='*' cmd.exe /C "echo %userprofile%")" | rmcr)/runx_Xauthority"
-      export XAUTHORITY="$Xclientcookie"
+      export XAUTHORITY="$Xcookie"
       verbose "DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY"
       note "If you get application error messages like 'Cannot open display'
   or 'Invalid MIT-MAGIC-COOKIE', the X authentication cookie might be broken.
