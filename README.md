@@ -53,7 +53,7 @@ Installation in general:
    sudo wget https://raw.githubusercontent.com/mviereck/runx/master/runx -O /usr/local/bin/runx
    sudo chmod +x /usr/local/bin/runx
    sudo apt update
-   sudo apt install xauth telnet
+   sudo apt install xauth
    ```
    
 ### Installation in Cygwin
