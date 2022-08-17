@@ -718,11 +718,11 @@ main() {
   Compare:   https://github.com/mviereck/x11docker/issues/108"
 
   # set DISPLAY and XAUTHORITY, output on stdout
-  export DISPLAY=$Hostip:$Newdisplaynumber
-  Xcookie="$(convertpath windows "$(MSYS2_ARG_CONV_EXCL='*' cmd.exe /C "echo %userprofile%")" | rmcr)/Xauthority.runx"
+  DISPLAY=$Hostip:$Newdisplaynumber
+  Xcookie="$(convertpath subsystem "$(MSYS2_ARG_CONV_EXCL='*' cmd.exe /C "echo %userprofile%")" | rmcr)/Xauthority.runx"
   case "$Xauthentication" in
     yes)
-      export XAUTHORITY="$(convertpath subsystem "$Xcookie")"
+      XAUTHORITY="$(convertpath subsystem "$Xcookie")"
       verbose "DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY"
       note "If you get application error messages like 'Cannot open display'
   or 'Invalid MIT-MAGIC-COOKIE', the X authentication cookie might be broken.
@@ -740,6 +740,7 @@ main() {
       echo "DISPLAY=$DISPLAY"
     ;;
   esac
+  export DISPLAY XAUTHORITY
 
   # run X
   [ "$Xalreadyrunning" = "no" ] && start_xserver
