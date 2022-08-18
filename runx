@@ -342,35 +342,35 @@ check_xserver() {               # Check for Xwin and VcXsrv
   }
 
   # X server VcXsrv or XWin
-  Vcxsrvexe="$(command -v vcxsrv.exe)"
-  [ "$Vcxsrvexe" ] || Vcxsrvexe="$(command -v "$(convertpath subsystem "C:/Program Files/VcXsrv/vcxsrv.exe")")"
-  [ "$Vcxsrvexe" ] || Vcxsrvexe="$(command -v "$(convertpath subsystem "C:/Program Files/VcXsrv (x86)/vcxsrv.exe")")"
-  Xwinexe="$(command -v XWin)"
-  [ -z "$Xwinexe" ] && case $Winsubsystem in
+  Vcxsrvbin="$(command -v vcxsrv.exe)"
+  [ "$Vcxsrvbin" ] || Vcxsrvbin="$(command -v "$(convertpath subsystem "C:/Program Files/VcXsrv/vcxsrv.exe")")"
+  [ "$Vcxsrvbin" ] || Vcxsrvbin="$(command -v "$(convertpath subsystem "C:/Program Files/VcXsrv (x86)/vcxsrv.exe")")"
+  Xwinbin="$(command -v XWin)"
+  [ -z "$Xwinbin" ] && case $Winsubsystem in
     WSL1|WSL2)
       # search for XWin
       for Drive in $Winsubmount/*; do
-        Xwinexe="$(command -v "$Drive/cygwin64/bin/XWin.exe")"
-        [ "$Xwinexe" ] && break
-        Xwinexe="$(command -v "$Drive/cygwin32/bin/XWin.exe")"
-        [ "$Xwinexe" ] && break
+        Xwinbin="$(command -v "$Drive/cygwin64/bin/XWin.exe")"
+        [ "$Xwinbin" ] && break
+        Xwinbin="$(command -v "$Drive/cygwin32/bin/XWin.exe")"
+        [ "$Xwinbin" ] && break
       done
     ;;
   esac
   verbose "Found X servers:
-  $Vcxsrvexe
-  $Xwinexe"
+  $Vcxsrvbin
+  $Xwinbin"
 
-  [ -z "$Xserver" ] && [ -n "$Xwinexe" ]  && Xserver="xwin"
+  [ -z "$Xserver" ] && [ -n "$Xwinbin" ]  && Xserver="xwin"
   [ -z "$Xserver" ]                       && Xserver="vcxsrv"
   [ "$Winsubsystem" = "MSYS2" ]           && Xserver="vcxsrv"
 
   case "$Xserver" in
-    vcxsrv) Xserverexe="$Vcxsrvexe" ;;
-    xwin)   Xserverexe="$Xwinexe" ;;
+    vcxsrv) Xserverbin="$Vcxsrvbin" ;;
+    xwin)   Xserverbin="$Xwinbin" ;;
   esac
 
-  [ -z "$Xserverexe" ] && {
+  [ -z "$Xserverbin" ] && {
     case $Winsubsystem in
       WSL1|WSL2|CYGWIN) error "No X server found. 
   Please either install X server VcXsrv:
@@ -441,7 +441,7 @@ cookiebaker() {                 # Create an X cookie without xauth
 }
 generate_xcommand() {           # Generate command to start X server VcXsrv
 
-  Xcommand="$(escapestring "$Xserverexe") :$Newdisplaynumber -listen tcp -retro -lesspointer"
+  Xcommand="$(escapestring "$Xserverbin") :$Newdisplaynumber -listen tcp -retro -lesspointer"
 
   # GPU hardware acceleration
   case $Sharegpu in
@@ -505,8 +505,8 @@ setup_cookie() {                # Generate X authentication cookie
 
   # check for native xauth, otherwise use xauth.exe from VcXsrv
   Xauthbin="$(command -v xauth)"
-  [ -z "$Xauthbin" ] && [ -n "$Vcxsrvexe" ] && {
-    Xauthbin="${Vcxsrvexe%vcxsrv.exe}xauth.exe"
+  [ -z "$Xauthbin" ] && [ -n "$Vcxsrvbin" ] && {
+    Xauthbin="${Vcxsrvbin%vcxsrv.exe}xauth.exe"
   }
 
   # describe xauth wrapper for 'ssh -X' in MSYS2, https://github.com/mviereck/runx/issues/7
@@ -573,8 +573,8 @@ $Tasklistnew" | sort | uniq -u | sed '/^$/d')"
     case "$Xserver" in
       xwin)
         for Waiting in 1 2 3 4 5 6 7 8 9 10; do
-          [ -e "$(dirname "$Xwinexe")/../../tmp/.X11-unix/X$Newdisplaynumber" ] && Xready="yes"
-          [ -e "$(dirname "$Xwinexe")/../tmp/.X11-unix/X$Newdisplaynumber" ]    && Xready="yes"
+          [ -e "$(dirname "$Xwinbin")/../../tmp/.X11-unix/X$Newdisplaynumber" ] && Xready="yes"
+          [ -e "$(dirname "$Xwinbin")/../tmp/.X11-unix/X$Newdisplaynumber" ]    && Xready="yes"
           sleep 1
           [ "$Xready" ] && break
           verbose "Waiting since ${Waiting}s for XWin to be ready."
@@ -623,16 +623,16 @@ declare_variables() {
   Hostip=""
   Newdisplaynumber=""
   Sourced=""
-  Vcxsrvexe=""
+  Vcxsrvbin=""
   Xserverwinpid=""
   Winsubmount=""
   Winsubpath=""
   Xcommand=""
   Xready=""
   Xserver=""
-  Xserverexe=""
+  Xserverbin=""
   Xserverpid=""
-  Xwinexe=""
+  Xwinbin=""
 }
 parse_options() {
   local Shortoptions Longoptions Parsererror
@@ -682,7 +682,7 @@ finish() {
       unset Desktopmode Screensize Shareclipboard Sharegpu Verbose Xauthentication
       unset Esc Colblue Colyellow Colgreen Colgreenbg Colred Colredbg Coluline Colnorm
 
-      unset Exitcode Hostip Newdisplaynumber Sourced Vcxsrvexe Xserverwinpid Winsubmount Winsubpath Xcommand Xready Xserver Xserverexe Xserverpid Xwinexe
+      unset Exitcode Hostip Newdisplaynumber Sourced Vcxsrvbin Xserverwinpid Winsubmount Winsubpath Xcommand Xready Xserver Xserverbin Xserverpid Xwinbin
     ;;
     no)
       [ "$Xserverpid" ] && ps -p "$Xserverpid" >/dev/null 2>&1 && {
