@@ -111,6 +111,13 @@ In future runs of the terminal you can directly run Linux GUI applications, e.g.
 pcmanfm
 ```
 
+### Use an already running X server
+ - If you specify option `--display`, runx will check if an X server is already running
+with the specified display number and will only provide the access credentials
+`DISPLAY` and `XAUTHORITY` instead of running an additional X server.
+ - The access credentials are also stored in file `~/.Xenv`.
+You can make them available in a new terminal sourcing the file with `. ~/.Xenv` or `source ~/.Xenv`.
+
 ## Output of `runx --help`
 ```
 runx - Run Linux GUI applications on MS Windows.
@@ -129,7 +136,8 @@ Options:
       --xwin                   Use X server XWin.
       --clipboard [=yes|no]    Enable clipboard sharing yes/no. Default: yes.
       --display N              Use display number N for new X server.
-                               Default: random number in range of 100...3376.
+                               If the display number is already in use, runx will 
+                               only provide the likely access credentials.
       --ip ADRESS              IP adress to use. Default: First found 192.168.*
       --no-auth                Disable X cookie authentication. Discouraged.
       --cleanup                Stop all X servers and delete cookies.
@@ -171,8 +179,15 @@ Providing an X server in background all the time:
  - Create an entry in ~/.bashrc: source /usr/local/bin/runx
  - In future terminal session you can directly run GUI commands.
    E.g. just type:  'pcmanfm'  instead of 'runx -- pcmanfm'.
+ - If you specify a display number with --display, runx will re-use
+   a possibly already running X server with same display number
+   and only provide the access credentials DISPLAY and XAUTHORITY.
+   This allows to use the same X server across several terminals.
 
-runx version v0.4.3
+runx stores the access credentials DISPLAY and XAUTHORITY in ~/.Xenv
+This allows sourcing the file for custom access setups.
+
+runx version 0.4.20
 Please report issues and get help at:   https://github.com/mviereck/runx
  ```
  

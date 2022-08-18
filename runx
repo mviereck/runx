@@ -1,7 +1,7 @@
 #! /bin/bash
 # runx: Provide an X server in Cygwin, MSYS2 or WSL.
 
-Version="v0.4.18"
+Version="v0.4.20"
 
 usage() {                       # Usage information (--help)
   echo "runx - Run Linux GUI applications on MS Windows.
@@ -63,6 +63,13 @@ Providing an X server in background all the time:
  - Create an entry in ~/.bashrc: source /usr/local/bin/runx
  - In future terminal session you can directly run GUI commands.
    E.g. just type:  'pcmanfm'  instead of 'runx -- pcmanfm'.
+ - If you specify a display number with --display, runx will re-use
+   a possibly already running X server with same display number
+   and only provide the access credentials DISPLAY and XAUTHORITY.
+   This allows to use the same X server across several terminals.
+
+runx stores the access credentials DISPLAY and XAUTHORITY in ~/.Xenv
+This allows sourcing the file for custom access setups.
 
 runx version $Version
 Please report issues and get help at:   https://github.com/mviereck/runx
@@ -283,7 +290,6 @@ check_displayport() {           # Return 0 if display number $1 is in use
   (</dev/tcp/"$Hostip"/$((6000+${1:-})) ) >/dev/null 2>&1
 }
 check_host() {                  # Check host environment
-
   # Check for MS Windows subsystem
   command -v cygcheck.exe >/dev/null && {
     cygcheck.exe -V | rmcr | grep -q "(cygwin)"   && Winsubsystem="CYGWIN"
@@ -606,6 +612,7 @@ declare_variables() {
   Sharegpu="no"
   Verbose="no"
   Xauthentication="yes"
+  Xenvfile="$HOME/.Xenv"
 
   # Terminal colors used for messages and --verbose=c
   Esc="$(printf '\033')"
@@ -740,6 +747,8 @@ main() {
   or 'Invalid MIT-MAGIC-COOKIE', the X authentication cookie might be broken.
   You can remove old cookies and stop running X servers with: runx --cleanup"
       echo "DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY"
+      echo "export DISPLAY=$DISPLAY
+export XAUTHORITY=$XAUTHORITY" > "$Xenvfile"
     ;;
     no)
       unset XAUTHORITY
@@ -750,6 +759,7 @@ main() {
   Others could try to access your system through network connections. 
   Please use option --no-auth for debugging only."
       echo "DISPLAY=$DISPLAY"
+      echo "export DISPLAY=$DISPLAY" > "$Xenvfile"
     ;;
   esac
   export DISPLAY XAUTHORITY
