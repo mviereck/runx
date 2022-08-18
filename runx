@@ -1,7 +1,7 @@
 #! /bin/bash
 # runx: Provide an X server in Cygwin, MSYS2 or WSL.
 
-Version="v0.4.16"
+Version="v0.4.17"
 
 usage() {                       # Usage information (--help)
   echo "runx - Run Linux GUI applications on MS Windows.
@@ -509,17 +509,12 @@ setup_cookie() {                # Generate X authentication cookie
     Xauthbin="${Vcxsrvexe%vcxsrv.exe}xauth.exe"
   }
 
-  [ -e "$Xauthbin" ] && case "$Winsubsystem" in
-    MSYS2)
-      # create xauth wrapper for 'ssh -X' in MSYS2, https://github.com/mviereck/runx/issues/7
-      [ -e /usr/X11R6/bin/xauth ] || {
-        mkdir -p /usr/X11R6/bin
-        echo "#! /bin/bash
+  # describe xauth wrapper for 'ssh -X' in MSYS2, https://github.com/mviereck/runx/issues/7
+  [ -e "$Xauthbin" ] && [ "$Winsubsystem" = "MSYS2" ] && [ ! -e /usr/X11R6/bin/xauth ] && note "If you want to use 'ssh -X' in MSYS2, you might need
+  to create an executeable script /usr/X11R6/bin/xauth with the content:
+#! /bin/bash
 $(escapestring "$Xauthbin") \"$@\"
-" >/usr/X11R6/bin/xauth
-      }
-    ;;
-  esac
+"
 
   [ -e "$Xauthbin" ] && {
     Xauthbin="$(escapestring "$Xauthbin")"
