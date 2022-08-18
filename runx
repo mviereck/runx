@@ -510,13 +510,13 @@ setup_cookie() {                # Generate X authentication cookie
   }
 
   # describe xauth wrapper for 'ssh -X' in MSYS2, https://github.com/mviereck/runx/issues/7
-  [ -e "$Xauthbin" ] && [ "$Winsubsystem" = "MSYS2" ] && [ ! -e /usr/X11R6/bin/xauth ] && note "If you want to use 'ssh -X' in MSYS2, you might need
+  [ -x "$Xauthbin" ] && [ "$Winsubsystem" = "MSYS2" ] && [ ! -x /usr/X11R6/bin/xauth ] && note "If you want to use 'ssh -X' in MSYS2, you might need
   to create an executeable script /usr/X11R6/bin/xauth with the content:
 #! /bin/bash
 $(escapestring "$Xauthbin") \"$@\"
 "
 
-  [ -e "$Xauthbin" ] && {
+  [ -x "$Xauthbin" ] && {
     grep -q "/usr/bin" <<< "$Xauthbin" && Xauthsystem="subsystem" || Xauthsystem="windows"
     # generate fresh cookie
     "$Xauthbin" -i -f "$(convertpath $Xauthsystem "$Xcookie")" add :$Newdisplaynumber . $(mcookie)
