@@ -237,7 +237,7 @@ getwslpath() {                  # Get path to currently running WSL system
   # Mark our filesystem with a temporary file having an unique name.
   touch "${RUN_ID}"
 
-  powershell.exe -Command '(Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss | ForEach-Object {Get-ItemProperty $_.PSPath}).BasePath.replace(":", "").replace("\", "/")' | while IFS= read -r BASEPATH; do
+  powershell.exe -Command '(Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss | ForEach-Object {Get-ItemProperty $_.PSPath}).BasePath | where-object {$_ -ne $null} | ForEach-Object { $_.replace(":", "").replace("\", "/") }' | while IFS= read -r BASEPATH; do
     # Remove trailing whitespaces.
     BASEPATH="${BASEPATH%"${BASEPATH##*[![:space:]]}"}"
     # Build the path on WSL.
@@ -287,7 +287,7 @@ check_display() {               # Find unused display number
   return 1
 }
 check_displayport() {           # Return 0 if display number $1 is in use
-  (</dev/tcp/"$Hostip"/$((6000+${1:-})) ) >/dev/null 2>&1
+  timeout 1 bash -c "</dev/tcp/"$Hostip"/$((6000+${1:-})) >/dev/null 2>&1" && return 0 || return 1
 }
 check_host() {                  # Check host environment
   # Check for MS Windows subsystem
@@ -351,7 +351,7 @@ check_xserver() {               # Check for Xwin and VcXsrv
   Vcxsrvbin="$(command -v vcxsrv.exe)"
   [ "$Vcxsrvbin" ] || Vcxsrvbin="$(command -v "$(convertpath subsystem "C:/Program Files/VcXsrv/vcxsrv.exe")")"
   [ "$Vcxsrvbin" ] || Vcxsrvbin="$(command -v "$(convertpath subsystem "C:/Program Files/VcXsrv (x86)/vcxsrv.exe")")"
-  Xwinbin="$(command -v XWin)"
+  Xwinbin="$(command -v XWin)" || Xwinbin="$(command -v XWin.exe)"
   [ -z "$Xwinbin" ] && case $Winsubsystem in
     WSL1|WSL2)
       # search for XWin
