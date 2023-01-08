@@ -326,6 +326,7 @@ check_host() {                  # Check host environment
 
   # Get IP of Windows host
   [ "$Hostip" = "localhost" ] && Hostip="127.0.0.1"
+  [ "$Hostip" ] || [ "$Winsubsystem" = "WSL2" ] && Hostip="$(ip route list default | awk '{print $3}')"
   [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr | grep 'IPv4' | grep -o '192\.168\.[0-9]*\.[0-9]*'       | head -n1 )"
   [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr | grep 'IPv4' | grep -o '10\.0\.[0-9]*\.[0-9]*'          | head -n1 )"
   [ "$Hostip" ] || Hostip="$(ipconfig.exe | rmcr | grep 'IPv4' | grep -o '[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*' | head -n1 )"
@@ -777,8 +778,8 @@ export XAUTHORITY=$XAUTHORITY" > "$Xenvfile"
 
 trap finish EXIT
 declare_variables
-check_host
 parse_options "$@"
+check_host
 [ "$Cleanup" = "yes" ] && cleanup && Exitcode="${Exitcode:-0}"
 [ -z "$Exitcode" ]     && main
 finish "${Exitcode:-0}"
