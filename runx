@@ -303,9 +303,6 @@ check_host() {                  # Check host environment
   Did not detect WSL, Cygwin or MSYS2." ;;
   esac
 
-  [ "$0" = "$BASH_SOURCE" ] && Sourced="no" || Sourced="yes"
-  verbose "Script is being sourced yes/no: $Sourced"
-
   case $Winsubsystem in
     MSYS2|CYGWIN) 
       Winsubmount="$(cygpath.exe -u "c:/" | rmcr | sed s%/c/%%)"
@@ -645,6 +642,9 @@ declare_variables() {
 parse_options() {
   local Shortoptions Longoptions Parsererror
 
+  [ "$0" = "$BASH_SOURCE" ] && Sourced="no" || Sourced="yes"
+  verbose "Script is being sourced yes/no: $Sourced"
+
   Shortoptions="dghv"
   Longoptions="cleanup,clipboard::,desktop,display:,gpu,help,no-auth,size:,vcxsrv,verbose,version,xwin"
   Longoptions="$Longoptions,ip:" # experimental
@@ -660,7 +660,7 @@ parse_options() {
       -d|--desktop)       Desktopmode="yes" ;;
          --display)       Newdisplaynumber="${2:-}" ; shift ;;
       -g|--gpu)           Sharegpu="yes" ;;
-      -h|--help)          usage; finish ;;
+      -h|--help)          usage; Exitcode=0 ;;
          --ip)            Hostip="${2:-}" ; shift ;;
          --no-auth)       Xauthentication="no" ;;
          --size)          Screensize="${2:-}" ; shift ;;
@@ -779,7 +779,7 @@ export XAUTHORITY=$XAUTHORITY" > "$Xenvfile"
 trap finish EXIT
 declare_variables
 parse_options "$@"
-check_host
-[ "$Cleanup" = "yes" ] && cleanup && Exitcode="${Exitcode:-0}"
-[ -z "$Exitcode" ]     && main
+[ -z "$Exitcode" ] && check_host
+[ -z "$Exitcode" ] && [ "$Cleanup" = "yes" ] && cleanup && Exitcode="${Exitcode:-0}"
+[ -z "$Exitcode" ] && main
 finish "${Exitcode:-0}"
