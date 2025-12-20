@@ -323,7 +323,7 @@ check_host() {                  # Check host environment
 
   # Get IP of Windows host
   [ "$Hostip" = "localhost" ] && Hostip="127.0.0.1"
-  [ -z "$Hostip" ] && [ "$Winsubsystem" = "WSL2" ] && Hostip="$(wsl.exe hostname -I)"
+  [ -z "$Hostip" ] && [ "$Winsubsystem" = "WSL2" ] && Hostip="$(grep "nameserver" <<< "/etc/resolv.conf" | head -n1 | awk '{ print $2 }')"
   #[ -z "$Hostip" ] && [ "$Winsubsystem" = "WSL2" ] && Hostip="$(ip route list default | awk '{print $3}')"
   [ -z "$Hostip" ] && Hostip="$(ipconfig.exe | rmcr | grep 'IPv4' | grep -o '192\.168\.[0-9]*\.[0-9]*'       | head -n1 )"
   [ -z "$Hostip" ] && Hostip="$(ipconfig.exe | rmcr | grep 'IPv4' | grep -o '10\.0\.[0-9]*\.[0-9]*'          | head -n1 )"
