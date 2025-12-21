@@ -592,6 +592,14 @@ $Tasklistnew" | sort | uniq -u | sed '/^$/d')"
       vcxsrv) sleep 1 ;;
     esac
   }
+  [ -n "$Xhost" ] && {
+    warning "Option --xhost: Setting 'xhost $Xhost'
+  (experimental option yet)"
+    DISPLAY=":$Newdisplaynumber" XAUTHORITY="$Xcookie" xhost $Xhost
+    DISPLAY=":$Newdisplaynumber" XAUTHORITY="$Xcookie" xhost
+    DISPLAY="$Hostip:$Newdisplaynumber" XAUTHORITY="$Xcookie" xhost $Xhost
+    DISPLAY="$Hostip:$Newdisplaynumber" XAUTHORITY="$Xcookie" xhost
+  }
 }
 
 ### special jobs
@@ -636,6 +644,7 @@ declare_variables() {
   Xserverwinpid=""
   Winsubmount=""
   Winsubpath=""
+  Xhost=
   Xcommand=""
   Xready=""
   Xserver=""
@@ -650,7 +659,7 @@ parse_options() {
   verbose "Script is being sourced yes/no: $Sourced"
 
   Shortoptions="dghv"
-  Longoptions="cleanup,clipboard::,desktop,display:,gpu,help,no-auth,size:,vcxsrv,verbose,version,xwin"
+  Longoptions="cleanup,clipboard::,desktop,display:,gpu,help,no-auth,size:,vcxsrv,verbose,version,xwin,xhost:"
   Longoptions="$Longoptions,ip:" # experimental
 
   Parsedoptions="$(getopt --options $Shortoptions --longoptions $Longoptions --name "$0" -- "$@")" || error "Failed to parse options. See 'runx --help'."
@@ -671,6 +680,7 @@ parse_options() {
       -v|--verbose)       Verbose="yes" ;;
          --vcxsrv)        Xserver="vcxsrv" ;;
          --version)       echo "runx version $Version"; Exitcode=0 ;;
+         --xhost)         Xhost="${2:-}" ; shift ;;
          --xwin)          Xserver="xwin" ;;
          --)              shift; Hostcommand="$@"; break ;;
       *) error "Unknown option: ${1:-}
