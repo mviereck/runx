@@ -528,7 +528,7 @@ $(escapestring "$Xauthbin") \"\$@\"
     "$Xauthbin" -v -i -f "$(convertpath $Xauthsystem "$Xcookie")" add :$Newdisplaynumber . $(mcookie)
     # prepare cookie with localhost identification disabled by ffff. ffff means 'familiy wild'
     verbose "Extracting cookie data and adjusting family."
-    Cookie="$("$Xauthbin" -v -i -f "$(convertpath $Xauthsystem "$Xcookie")" nlist | sed -e 's/^..../ffff/')"
+    Cookie="$("$Xauthbin" -i -f "$(convertpath $Xauthsystem "$Xcookie")" nlist | sed -e 's/^..../ffff/')"
     verbose "Storing prepared cookie $Cookie"
     printf "$Cookie" | "$Xauthbin" -v -i -f "$(convertpath $Xauthsystem "$Xcookie")" nmerge -
     verbose "Cookie: $("$Xauthbin" -v -f "$(convertpath $Xauthsystem "$Xcookie")" list)"
