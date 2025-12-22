@@ -443,17 +443,43 @@ cookiebaker() {                 # Create an X cookie without xauth
     printf \"${Code}\"
   }"
 }
+clean_xhost() {               # remove any access to X server granted by xhost
+  local Line= Environment
+  Environment="${1:-"DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY"}"
+  env $Environment xhost 2>&1 | tail -n +2  /dev/stdin | while read -r Line ; do  # read all but the first line (header)
+    debugnote "xhost: Removing entry $Line"
+    env $Environment xhost -"$Line"
+  done
+  env $Environment xhost -
+  [ "$(env $Environment xhost 2>&1 | wc -l)" -gt 1 ] && {
+    warning "Remaining xhost permissions found:
+$(env $Environment xhost 2>&1 )"
+    return 1
+  }
+  env $Environment xhost 2>&1 | grep -q "access control disabled" && {
+    warning "Failed to restrict xhost permissions.
+  Access to display is allowed for everyone."
+    return 1
+  }
+  return 0
+}
 generate_xcommand() {           # Generate command to start X server VcXsrv
 
   Xcommand="$(escapestring "$Xserverbin") :$Newdisplaynumber -listen tcp -retro -lesspointer"
 
   # GPU hardware acceleration
   case $Sharegpu in
-    yes) Xcommand="$Xcommand -wgl   +iglx" ; export LIBGL_ALWAYS_INDIRECT=1 
+    yes) 
+      Xcommand="$Xcommand -wgl   +iglx" 
+      export LIBGL_ALWAYS_INDIRECT=1 
       [ "$Xserver" = "vcxsrv" ] && note "GPU support of VcXsrv has some issues.
   If it does not work or crashes, try runx with option --xwin instead."
     ;;
-    no)  Xcommand="$Xcommand -nowgl -iglx" ; unset  LIBGL_ALWAYS_INDIRECT ; export LIBGL_ALWAYS_INDIRECT ;;
+    no)  
+      Xcommand="$Xcommand -nowgl -iglx"
+      unset  LIBGL_ALWAYS_INDIRECT
+      export LIBGL_ALWAYS_INDIRECT
+    ;;
   esac
 
   # Seamless or desktop mode
@@ -469,10 +495,10 @@ generate_xcommand() {           # Generate command to start X server VcXsrv
   [ "$Screensize" ] && Xcommand="$Xcommand -screen 0 '$Screensize'"
 
   case $Xauthentication in
-    yes) 
+    yes) # -ac removed with xhost later
       case "$Xserver" in
-        xwin)   Xcommand="$Xcommand -auth '$Xcookie'" ;;
-        vcxsrv) Xcommand="$Xcommand -auth '$(convertpath windows "$Xcookie")'" ;;
+        xwin)   Xcommand="$Xcommand -ac -auth '$Xcookie'" ;;
+        vcxsrv) Xcommand="$Xcommand -ac -auth '$(convertpath windows "$Xcookie")'" ;;
       esac ;;
     no)         Xcommand="$Xcommand -ac" ;;
   esac
@@ -592,13 +618,18 @@ $Tasklistnew" | sort | uniq -u | sed '/^$/d')"
       vcxsrv) sleep 1 ;;
     esac
   }
-  [ -n "$Xhost" ] && {
-    warning "Option --xhost: Setting 'xhost $Xhost'
-  (experimental option yet)"
-    DISPLAY=":$Newdisplaynumber" XAUTHORITY="$Xcookie" xhost $Xhost
-    DISPLAY=":$Newdisplaynumber" XAUTHORITY="$Xcookie" xhost
-    DISPLAY="$Hostip:$Newdisplaynumber" XAUTHORITY="$Xcookie" xhost $Xhost
-    DISPLAY="$Hostip:$Newdisplaynumber" XAUTHORITY="$Xcookie" xhost
+  # remove xhost permissions, set only desired ones
+  for Line in "$Xhost"; do
+    [ -n "$Line" ] && xhost "$Line"
+  done
+  [ "$Xauthentication" = "yes" ] && {
+    Xhostlist="$(xhost | tail -n +2)"
+    for Line in $Xhostlist; do
+      [ -n "$Line" ] && {
+        grep -q "+$Line" <<< "$Xhost" || xhost "-$Line"
+      }
+    done
+    xhost -
   }
 }
 
