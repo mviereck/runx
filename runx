@@ -629,7 +629,7 @@ $Tasklistnew" | sort | uniq -u | sed '/^$/d')"
         grep -q "+$Line" <<< "$Xhost" || xhost "-$Line"
       }
     done
-    xhost -
+    grep -x -q "+" <<< "$Xhost" || xhost -
   }
 }
 
