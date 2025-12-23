@@ -34,18 +34,17 @@ For similar functionality on native Linux systems use [x11docker](https://github
 Installation in general:
  - Install an X server, *VcXsrv* or *XWin*.
  - Copy `runx` into folder `/usr/local/bin` and make it executeable with `chmod +x /usr/local/bin/runx`.
- - Install Linux dependency `xauth` if available.
- - Install Linux dependency `telnet`.
+ - Install Linux dependencies `telnet`, `shuf`, `xhost` and (if available) `xauth` in the system where you will run runx.
  
 ### Installation of X server
 `runx` needs an [X server](https://en.wikipedia.org/wiki/X_Window_System). Install on MS Windows one or both of:
  - [VcXsrv](https://sourceforge.net/projects/vcxsrv/) to provide X server *VcXsrv*. 
    - Easier to install than *XWin*.
- - [Cygwin](https://www.cygwin.com) with packages `xinit` and `xauth`. 
+ - [Cygwin/X](https://www.cygwin.com)
    - This provides X server *XWin* for Cygwin and WSL.
    - *XWin* has a better `--gpu` support than *VcXsrv*.
  
-`runx` will automatically use *XWin* if available. You can specify the desired X server with options `--xwin` or `--vcxsrv`. 
+`runx` will automatically use *VcXsrv* if available. You can specify the desired X server with options `--xwin` or `--vcxsrv`. 
 
 ### Installation in WSL
  - Run the following commands in WSL/Ubuntu terminal to install `runx` and its dependencies:
@@ -53,11 +52,11 @@ Installation in general:
    sudo wget https://raw.githubusercontent.com/mviereck/runx/master/runx -O /usr/local/bin/runx
    sudo chmod +x /usr/local/bin/runx
    sudo apt update
-   sudo apt install xauth
+   sudo apt install xauth xhost telnet shuf
    ```
    
 ### Installation in Cygwin
- - Run the Cygwin installer and install packages `xinit`, `xauth` and `wget`.
+ - Run the Cygwin/X installer and install packages `xinit`, `xauth`, `telnet`, `shuf` and `wget`.
  - In Cygwin terminal run the commands:
    ```
    wget https://raw.githubusercontent.com/mviereck/runx/master/runx -O /usr/local/bin/runx
