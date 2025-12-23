@@ -1,7 +1,7 @@
 #! /bin/bash
 # runx: Provide an X server in Cygwin, MSYS2 or WSL.
 
-Version="v0.4.24"
+Version="v0.5.0"
 
 usage() {                       # Usage information (--help)
   echo "runx - Run Linux GUI applications on MS Windows.
@@ -24,7 +24,10 @@ Options:
                                only provide the likely access credentials.
       --ip ADRESS              IP adress to use. Default: First found 192.168.*
       --no-auth                Disable X cookie authentication. Discouraged.
+                               Currently default for --xwin due to 
+                               an Xwin cookie bug
       --cleanup                Stop all X servers and delete cookies.
+      --xhost ARG              Argument to be executed with xhost.
   -v, --verbose                Be verbose.
 
 Installation of runx in WSL:
@@ -43,6 +46,10 @@ VcXsrv is easier to install. XWin provides a better GPU support.
 
 WSL, Cygwin: runx starts XWin if available, otherwise it starts VcXsrv.
 MSYS2:       runx supports VcXsrv only.
+
+Further dependencies:
+In the system where you run runx, please install:
+ telnet shuf xauth xhost
 
 Usage:
 
@@ -80,7 +87,6 @@ Please report issues and get help at:   https://github.com/mviereck/runx
 error() {                       # Show error message and exit
   echo -e "${Colredbg}runx ERROR:${Colnorm} $*
 " >&2
-  Exitcode=1
   return 0
 }
 note() {                        # Show notice messages
@@ -301,7 +307,8 @@ check_host() {                  # Check host environment
   case "$Winsubsystem" in
     WSL1|WSL2|CYGWIN|MSYS2) ;;
     *) error "runx is designed to run on MS Windows in WSL, Cygwin or MSYS2.
-  Did not detect WSL, Cygwin or MSYS2." ;;
+  Did not detect WSL, Cygwin or MSYS2."
+    return 1 ;;
   esac
 
   case $Winsubsystem in
@@ -365,9 +372,9 @@ check_xserver() {               # Check for Xwin and VcXsrv
   $Vcxsrvbin
   $Xwinbin"
 
-  [ -z "$Xserver" ] && [ -n "$Xwinbin" ]  && Xserver="xwin"
-  [ -z "$Xserver" ]                       && Xserver="vcxsrv"
-  [ "$Winsubsystem" = "MSYS2" ]           && Xserver="vcxsrv"
+  [ -z "$Xserver" ] && [ -n "$Vcxsrvbin" ]  && Xserver="vcxsrv"
+  [ -z "$Xserver" ]                         && Xserver="xwin"
+  [ "$Winsubsystem" = "MSYS2" ]             && Xserver="vcxsrv"
 
   case "$Xserver" in
     vcxsrv) Xserverbin="$Vcxsrvbin" ;;
@@ -378,12 +385,12 @@ check_xserver() {               # Check for Xwin and VcXsrv
     case $Winsubsystem in
       WSL1|WSL2|CYGWIN) error "No X server found. 
   Please either install X server VcXsrv:
-      https://sourceforge.net/projects/vcxsrv
+      https://github.com/marchaesen/vcxsrv
   or install Cygwin with packages xinit and xauth to provide XWin:
       https://www.cygwin.com/" ;;
       MSYS2)            error "No X server found for MSYS2. 
   Please install X server VcXsrv:
-      https://sourceforge.net/projects/vcxsrv" ;;
+      https://github.com/marchaesen/vcxsrv" ;;
     esac
   }
   return 0
@@ -442,26 +449,6 @@ cookiebaker() {                 # Create an X cookie without xauth
     printf \"\x00\x10\"
     printf \"${Code}\"
   }"
-}
-clean_xhost() {               # remove any access to X server granted by xhost
-  local Line= Environment
-  Environment="${1:-"DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY"}"
-  env $Environment xhost 2>&1 | tail -n +2  /dev/stdin | while read -r Line ; do  # read all but the first line (header)
-    debugnote "xhost: Removing entry $Line"
-    env $Environment xhost -"$Line"
-  done
-  env $Environment xhost -
-  [ "$(env $Environment xhost 2>&1 | wc -l)" -gt 1 ] && {
-    warning "Remaining xhost permissions found:
-$(env $Environment xhost 2>&1 )"
-    return 1
-  }
-  env $Environment xhost 2>&1 | grep -q "access control disabled" && {
-    warning "Failed to restrict xhost permissions.
-  Access to display is allowed for everyone."
-    return 1
-  }
-  return 0
 }
 generate_xcommand() {           # Generate command to start X server VcXsrv
 
@@ -570,8 +557,6 @@ $(escapestring "$Xauthbin") \"\$@\"
   }
 }
 start_xserver() {               # Run X
-  check_xserver
-  generate_xcommand
   [ "$Xauthentication" = "yes" ] && setup_cookie
 
   case "$Verbose" in
@@ -613,7 +598,10 @@ $Tasklistnew" | sort | uniq -u | sed '/^$/d')"
           [ "$Xready" ] && break
           verbose "Waiting since ${Waiting}s for XWin to be ready."
         done
-        [ "$Xready" ] && verbose "X server XWin ready after ${Waiting}s." || error "X server XWin not ready after  ${Waiting}s."
+        [ "$Xready" ] && verbose "X server XWin ready after ${Waiting}s." || {
+          error "X server XWin not ready after  ${Waiting}s."
+          return 1
+          }
       ;;
       vcxsrv) sleep 1 ;;
     esac
@@ -622,15 +610,15 @@ $Tasklistnew" | sort | uniq -u | sed '/^$/d')"
   for Line in "$Xhost"; do
     [ -n "$Line" ] && xhost "$Line"
   done
-#  [ "$Xauthentication" = "yes" ] && {
-#    Xhostlist="$(xhost | tail -n +2)"
-#    for Line in $Xhostlist; do
-#      [ -n "$Line" ] && {
-#        grep -q "+$Line" <<< "$Xhost" || xhost "-$Line"
-#      }
-#    done
-#    grep -x -q "+" <<< "$Xhost" || xhost -
-#  }
+  "$Xauthentication" = "yes" ] && {
+    Xhostlist="$(xhost | tail -n +2)"
+    for Line in $Xhostlist; do
+      [ -n "$Line" ] && {
+        grep -q "+$Line" <<< "$Xhost" || xhost "-$Line"
+      }
+    done
+    grep -x -q "+" <<< "$Xhost" || xhost -
+  }
 }
 
 ### special jobs
@@ -693,7 +681,10 @@ parse_options() {
   Longoptions="cleanup,clipboard::,desktop,display:,gpu,help,no-auth,size:,vcxsrv,verbose,version,xwin,xhost:"
   Longoptions="$Longoptions,ip:" # experimental
 
-  Parsedoptions="$(getopt --options $Shortoptions --longoptions $Longoptions --name "$0" -- "$@")" || error "Failed to parse options. See 'runx --help'."
+  Parsedoptions="$(getopt --options $Shortoptions --longoptions $Longoptions --name "$0" -- "$@")" || {
+    error "Failed to parse options. See 'runx --help'."
+    return 1
+  }
   eval set -- "$Parsedoptions"
   verbose "$Parsedoptions"
 
@@ -759,10 +750,14 @@ main() {
 #  for Line in cmd.exe ipconfig.exe powershell.exe tasklist.exe taskkill.exe; do
 #    check_dependency "$Line" || error "Did not find Windows command: $Line"
 #  done
+
   # Linux commands
   for Line in telnet shuf; do
-    check_dependency "$Line" || error "Did not find Linux command: $Line
+    check_dependency "$Line" || {
+      error "Did not find Linux command: $Line
   Please install $Line"
+      return 1
+    }
   done
 
   Xalreadyrunning="no"
@@ -774,7 +769,10 @@ main() {
     }
   }
   [ -z "$Newdisplaynumber" ] && {
-    Newdisplaynumber="$(check_display)" || error "runx: Did not find a free display number."
+    Newdisplaynumber="$(check_display)" || {
+      error "runx: Did not find a free display number."
+      return 1
+    }
   }
 
   note "Windows firewall settings can forbid application access
@@ -784,7 +782,20 @@ main() {
 
   # set DISPLAY and XAUTHORITY, output on stdout
   DISPLAY=$Hostip:$Newdisplaynumber
+  cd
   Xcookie="$(convertpath subsystem "$(MSYS2_ARG_CONV_EXCL='*' cmd.exe /C "echo %userprofile%")" | rmcr)/Xauthority.runx"
+
+  [ "$Xalreadyrunning" = "no" ] && {
+    check_xserver
+    case "$Xserver" in
+      xwin)
+        Xauthentication="no"
+      warning "Option --xwin: Cookie setup fails in current Xwin.
+  Using very permissive xhost permissions instead.
+  Rather use --vcxsrv instead."
+      ;;
+    esac
+  }
   case "$Xauthentication" in
     yes)
       XAUTHORITY="$Xcookie"
@@ -811,7 +822,10 @@ export XAUTHORITY=$XAUTHORITY" > "$Xenvfile"
   export DISPLAY XAUTHORITY
 
   # run X
-  [ "$Xalreadyrunning" = "no" ] && start_xserver
+  [ "$Xalreadyrunning" = "no" ] && {
+    generate_xcommand
+    start_xserver
+  }
 
   # run host command
   [ -z "$Exitcode" ] && [ "$Hostcommand" ] && {
