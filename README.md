@@ -43,6 +43,7 @@ Installation in general:
  - [Cygwin/X](https://www.cygwin.com)
    - This provides X server *XWin* for Cygwin and WSL.
    - *XWin* has a better `--gpu` support than *VcXsrv*.
+   - *XWin* currently fails in setting up cookies. So the X server is less secured than *VcXsrv*.
  
 `runx` will automatically use *VcXsrv* if available. You can specify the desired X server with options `--xwin` or `--vcxsrv`. 
 
