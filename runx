@@ -615,7 +615,7 @@ $Tasklistnew" | sort | uniq -u | sed '/^$/d')"
     for Line in $Xhostlist; do
       [ -n "$Line" ] && {
         case "$Line" in
-          host.docker.internal) ;;
+          *host.docker.internal) ;;
           *)
             grep -q "+$Line" <<< "$Xhost" || xhost "-$Line"
           ;;
