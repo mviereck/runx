@@ -614,7 +614,12 @@ $Tasklistnew" | sort | uniq -u | sed '/^$/d')"
     Xhostlist="$(xhost | tail -n +2)"
     for Line in $Xhostlist; do
       [ -n "$Line" ] && {
-        grep -q "+$Line" <<< "$Xhost" || xhost "-$Line"
+        case "$Line" in
+          host.docker.internal) ;;
+          *)
+            grep -q "+$Line" <<< "$Xhost" || xhost "-$Line"
+          ;;
+        esac
       }
     done
     grep -x -q "+" <<< "$Xhost" || xhost -
@@ -795,6 +800,7 @@ main() {
   Rather use --vcxsrv instead."
       ;;
     esac
+    note "Using X server option --$Xserver"
   }
   case "$Xauthentication" in
     yes)
