@@ -610,7 +610,7 @@ $Tasklistnew" | sort | uniq -u | sed '/^$/d')"
   for Line in "$Xhost"; do
     [ -n "$Line" ] && xhost "$Line"
   done
-  "$Xauthentication" = "yes" ] && {
+  [ "$Xauthentication" = "yes" ] && {
     Xhostlist="$(xhost | tail -n +2)"
     for Line in $Xhostlist; do
       [ -n "$Line" ] && {
