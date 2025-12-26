@@ -43,6 +43,7 @@ Install an X server on Windows:
    - XWin: Download and install Cygwin64 with packages: xinit xauth
        https://www.cygwin.com
 VcXsrv is easier to install. XWin provides a better GPU support.
+XWin has a bug in cookie setup, so VcXsrv is recommended.
 
 WSL, Cygwin: runx starts XWin if available, otherwise it starts VcXsrv.
 MSYS2:       runx supports VcXsrv only.
@@ -617,7 +618,7 @@ $Tasklistnew" | sort | uniq -u | sed '/^$/d')"
         case "$Line" in
           *host.docker.internal) ;;
           *)
-            grep -q "+$Line" <<< "$Xhost" || xhost "-$Line"
+            grep -q "$Line" <<< "$Xhost" || xhost "-$Line"
           ;;
         esac
       }
@@ -635,6 +636,7 @@ cleanup() {                     # --cleanup: Terminate X servers, delete cookies
   # Remove cookies
   Newdisplaynumber=0
   rm -v "$Xcookie"
+  Exitcode="0"
 }
 
 ### main
@@ -845,6 +847,6 @@ trap finish EXIT
 declare_variables
 parse_options "$@"
 [ -z "$Exitcode" ] && check_host
-[ -z "$Exitcode" ] && [ "$Cleanup" = "yes" ] && cleanup && Exitcode="${Exitcode:-0}"
+[ -z "$Exitcode" ] && [ "$Cleanup" = "yes" ] && cleanup
 [ -z "$Exitcode" ] && main
 finish "${Exitcode:-0}"

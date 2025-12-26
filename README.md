@@ -39,7 +39,7 @@ Installation in general:
 ### Installation of X server
 `runx` needs an [X server](https://en.wikipedia.org/wiki/X_Window_System). Install on MS Windows one or both of:
  - [VcXsrv](https://sourceforge.net/projects/vcxsrv/) to provide X server *VcXsrv*. 
-   - Easier to install than *XWin*.
+   - Easier to install than *XWin*, and more lightweight.
  - [Cygwin/X](https://www.cygwin.com)
    - This provides X server *XWin* for Cygwin and WSL.
    - *XWin* has a better `--gpu` support than *VcXsrv*.
