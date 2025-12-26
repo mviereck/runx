@@ -792,6 +792,8 @@ main() {
   cd
   Xcookie="$(convertpath subsystem "$(MSYS2_ARG_CONV_EXCL='*' cmd.exe /C "echo %userprofile%")" | rmcr)/Xauthority.runx"
 
+  [ "$Cleanup" = "yes" ] && cleanup && return 0
+
   [ "$Xalreadyrunning" = "no" ] && {
     check_xserver
     case "$Xserver" in
@@ -847,6 +849,5 @@ trap finish EXIT
 declare_variables
 parse_options "$@"
 [ -z "$Exitcode" ] && check_host
-[ -z "$Exitcode" ] && [ "$Cleanup" = "yes" ] && cleanup
 [ -z "$Exitcode" ] && main
 finish "${Exitcode:-0}"
